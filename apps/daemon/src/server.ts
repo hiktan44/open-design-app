@@ -1844,7 +1844,25 @@ export async function startServer({
 }: StartServerOptions = {}) {
   let resolvedPort = port;
   let daemonShuttingDown = false;
-  const extraAllowedOrigins = configuredAllowedOrigins();
+  const extraAllowedOrigins = (() => {
+    const configured = configuredAllowedOrigins();
+    // Reverse-proxied deployments (Traefik / nginx in front of the daemon on
+    // a public host) need the public origin allow-listed too. Honor
+    // OD_ALLOWED_ORIGINS as-is, then fall back to OD_PUBLIC_BASE_URL when
+    // OD_ALLOW_REMOTE_DAEMON=1, so a single env var gets the same-origin
+    // browser CORS check out of the way.
+    if (process.env.OD_ALLOW_REMOTE_DAEMON !== '1') return configured;
+    const fallback = process.env.OD_PUBLIC_BASE_URL;
+    if (!fallback) return configured;
+    try {
+      const u = new URL(fallback);
+      const origin = u.origin;
+      if (origin && !configured.includes(origin)) return [...configured, origin];
+    } catch {
+      // Malformed OD_PUBLIC_BASE_URL — ignore, the explicit allow-list wins.
+    }
+    return configured;
+  })();
   const app = express();
   app.use(express.json({ limit: '4mb' }));
 
