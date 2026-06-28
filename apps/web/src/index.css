@@ -109,6 +109,81 @@
   --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.6), 0 8px 16px rgba(0, 0, 0, 0.3);
 }
 
+/* ============================================================
+   Global responsive + safe-area primitives
+   ------------------------------------------------------------
+   Pinned at the top of the cascade so they apply before the
+   per-component rules. Touch targets, overflow, and viewport
+   scrollbar gaps are the most common iOS Safari / Android Chrome
+   issues on the design surface (chat composer, sidebars, modal
+   sheets), and the fix is cheap.
+   ============================================================ */
+html, body {
+  /* iOS Safari needs overscroll-behavior: contain to stop rubber-banding
+     from scrolling the page under a pinned bottom-bar. */
+  overscroll-behavior-y: contain;
+}
+
+body {
+  /* When the app is installed as a PWA the OS hides the URL bar; let
+     the bottom safe-area inset push the composer / sheets above the
+     home indicator. Per-component rules can override this with their
+     own padding-bottom. */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Make every interactive control hit a minimum 44x44 on touch devices
+   without affecting the desktop hover target. */
+@media (hover: none) and (pointer: coarse) {
+  button,
+  [role='button'],
+  a.btn,
+  .icon-btn,
+  .agent-card,
+  .skill-radio,
+  .seg-btn {
+    min-height: 44px;
+  }
+  /* Smaller inline icons get a 32px hit-box so taps still land. */
+  .icon-btn-sm,
+  .icon-only {
+    min-width: 32px;
+    min-height: 32px;
+  }
+}
+
+/* Inputs / textareas: stop iOS Safari from auto-zooming when the user
+   taps a field. The default 16px font size is the threshold; below
+   that Safari zooms in. */
+input,
+textarea,
+select,
+[contenteditable] {
+  font-size: max(16px, 1em);
+}
+
+/* Smooth momentum scroll on iOS for any scrollable container. */
+.scroll-y,
+.sidebar,
+.composer,
+.composer-list,
+.composer-thread,
+.modal-body,
+.sheet-body,
+.tabs,
+.tab-bar {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Compact phones (≤ 420px): tighten base padding so the entry / chat
+   composer still fits without horizontal scroll. */
+@media (max-width: 420px) {
+  :root {
+    --row-pad-x: 12px;
+    --row-pad-y: 10px;
+  }
+}
+
 /* System mode: follow OS preference when no explicit data-theme is set. */
 @media (prefers-color-scheme: dark) {
   html:not([data-theme]) {
@@ -14654,4 +14729,217 @@ body.entry-resizing { cursor: col-resize; user-select: none; }
 }
 .mcp-oauth-fallback .md-link:hover {
   text-decoration-thickness: 2px;
+}
+
+/* ============================================================
+   Responsive — phone-portrait / small tablet
+   ------------------------------------------------------------
+   The components above were authored for a desktop design surface
+   (1440px+). Phones (≤ 720px) and small tablets (≤ 960px) need
+   the layout re-folded: the sidebars collapse into off-canvas
+   sheets, the topbar shrinks to a single row with the primary
+   action visible, and the chat composer gets full-bleed edges so
+   the keyboard doesn't push it under the address bar on iOS.
+   ============================================================ */
+
+/* ---- ≤ 960px (small tablet / large phone) ------------------------- */
+@media (max-width: 960px) {
+  .app-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .app-sidebar,
+  .sidebar,
+  .left-sidebar,
+  .right-sidebar,
+  .inspector,
+  .inspector-pane {
+    position: fixed !important;
+    inset: 0;
+    z-index: 60;
+    width: 100% !important;
+    max-width: 360px;
+    background: var(--bg-app);
+    box-shadow: var(--shadow-lg);
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+  }
+  .right-sidebar,
+  .inspector,
+  .inspector-pane {
+    left: auto;
+    right: 0;
+    transform: translateX(100%);
+  }
+  body[data-sidebar-open='left'] .left-sidebar,
+  body[data-sidebar-open='right'] .right-sidebar,
+  body[data-sidebar-open='inspector'] .inspector,
+  body[data-inspector-open='1'] .inspector,
+  .sidebar.is-open,
+  .inspector.is-open {
+    transform: translateX(0);
+  }
+  .app-shell {
+    grid-template-columns: 1fr !important;
+  }
+  /* Hide desktop-only chrome on phones. */
+  .desktop-only,
+  .only-desktop {
+    display: none !important;
+  }
+}
+
+/* ---- ≤ 720px (phone) -------------------------------------------- */
+@media (max-width: 720px) {
+  /* Topbar: shrink padding, hide project subtitle, single-line title. */
+  .app-chrome,
+  .topbar,
+  header.app-chrome {
+    padding: 8px 12px !important;
+    gap: 8px !important;
+  }
+  .app-chrome-title,
+  .topbar-title,
+  h1.app-chrome-title {
+    font-size: 15px !important;
+  }
+  .app-chrome-subtitle,
+  .topbar-subtitle {
+    display: none !important;
+  }
+  /* Show mobile-only nav button. */
+  .mobile-only,
+  .only-mobile {
+    display: inline-flex !important;
+  }
+  /* Composer: full-bleed, bigger tap targets, no left/right inset. */
+  .composer,
+  .chat-composer,
+  .composer-shell {
+    padding: 10px 12px !important;
+    border-radius: 0 !important;
+  }
+  .composer textarea,
+  .composer input[type='text'],
+  .composer [contenteditable] {
+    font-size: 16px !important;
+  }
+  /* Modal/sheet: bottom sheet on phones, full-screen. */
+  .modal,
+  .dialog,
+  .sheet {
+    max-width: 100% !important;
+    width: 100% !important;
+    max-height: 92vh !important;
+    border-radius: 14px 14px 0 0 !important;
+    margin: auto 0 0 0 !important;
+  }
+  /* Two-column stacks collapse to one column. */
+  .stack-2col,
+  .grid-2,
+  .row-2,
+  .cols-2 {
+    grid-template-columns: 1fr !important;
+  }
+  .stack-3col,
+  .grid-3,
+  .row-3,
+  .cols-3 {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  /* Settings / long forms: stack the side rail on top. */
+  .settings-layout,
+  .settings-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .settings-rail,
+  .settings-nav {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg-app);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+  }
+  /* Hide second-toolbar rows when the user is typing into the
+     composer — keyboard is up, every pixel of vertical room matters. */
+  body.is-composing .topbar-meta,
+  body.is-composing .app-chrome-meta {
+    display: none !important;
+  }
+  /* Tooltips & hover popovers: not touchable, so we hide them. */
+  [data-tooltip]:hover::after,
+  [data-tooltip]:focus::after {
+    display: none !important;
+  }
+}
+
+/* ---- ≤ 480px (small phone) ------------------------------------- */
+@media (max-width: 480px) {
+  .app-chrome,
+  .topbar {
+    padding: 6px 8px !important;
+  }
+  .composer,
+  .chat-composer {
+    padding: 8px 10px !important;
+  }
+  .btn,
+  button.btn {
+    padding: 8px 12px !important;
+    font-size: 13px !important;
+  }
+  /* Compact card padding for chat/agent cards. */
+  .agent-card,
+  .skill-radio,
+  .seg-btn,
+  .card {
+    padding: 10px 12px !important;
+  }
+  /* Tab bar: scrollable horizontal on small screens so the
+     long provider lists don't overflow. */
+  .tab-bar,
+  .tabs-scrollable {
+    overflow-x: auto;
+    flex-wrap: nowrap !important;
+    scrollbar-width: none;
+  }
+  .tab-bar::-webkit-scrollbar {
+    display: none;
+  }
+  .tab-bar > *,
+  .tabs-scrollable > * {
+    flex: 0 0 auto;
+  }
+  /* Code blocks: allow horizontal scroll instead of overflowing the
+     viewport — common when pasting long error messages. */
+  pre,
+  code {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+}
+
+/* ---- Landscape phones: shorter topbar, bigger composer area --- */
+@media (max-width: 960px) and (orientation: landscape) and (max-height: 500px) {
+  .app-chrome,
+  .topbar {
+    padding: 4px 10px !important;
+  }
+  .composer,
+  .chat-composer {
+    padding: 6px 10px !important;
+  }
+}
+
+/* ---- Foldables / huge phones: cap layout width so a single
+       column doesn't stretch to 800px. */
+@media (min-width: 600px) and (max-width: 960px) {
+  .app-shell,
+  .composer,
+  .modal,
+  .sheet {
+    max-width: 720px;
+    margin-left: auto;
+    margin-right: auto;
+  }
 }

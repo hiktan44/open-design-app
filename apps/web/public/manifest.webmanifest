@@ -1,0 +1,65 @@
+{
+  "name": "Open Design",
+  "short_name": "Open Design",
+  "description": "Local-first AI design product — runs coding agents, design skills, and design systems to stream design artifacts.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "browser"],
+  "orientation": "any",
+  "background_color": "#faf9f7",
+  "theme_color": "#c96442",
+  "categories": ["design", "productivity", "developer"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192-maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "New Project",
+      "short_name": "New",
+      "description": "Start a new design project",
+      "url": "/?new=1",
+      "icons": [
+        { "src": "/icon-192.png", "sizes": "192x192" }
+      ]
+    },
+    {
+      "name": "Settings",
+      "short_name": "Settings",
+      "description": "Open API keys, MCP, and integrations",
+      "url": "/?settings=1",
+      "icons": [
+        { "src": "/icon-192.png", "sizes": "192x192" }
+      ]
+    }
+  ],
+  "screenshots": [],
+  "edge_side_panel": { "preferred_width": 480 },
+  "launch_handler": { "client_mode": "auto" },
+  "handle_links": "preferred",
+  "protocol_handlers": []
+}
