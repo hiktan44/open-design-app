@@ -146,6 +146,14 @@ export function isLocalSameOrigin(
   port: number | string | null | undefined,
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
+  // Same bypass as validateLocalDaemonRequest: when OD_ALLOW_REMOTE_DAEMON=1
+  // is set we trust the same Origin the browser used (the reverse proxy
+  // surfaces the public host in Host / Origin headers). Otherwise stay
+  // loopback-only — a local install must not be reachable by network peers.
+  if (env.OD_ALLOW_REMOTE_DAEMON === '1') {
+    return true;
+  }
+
   const host = String(headerValue(req.headers?.host) || '');
   const origin = headerValue(req.headers?.origin);
   const ports = allowedBrowserPorts(port, env);
