@@ -13,6 +13,7 @@ RUN pnpm --filter @open-design/sidecar build
 RUN pnpm --filter @open-design/platform build
 RUN pnpm --filter @open-design/daemon build
 RUN OD_WEB_OUTPUT_MODE= pnpm --filter @open-design/web build
+RUN cd node_modules/.pnpm/better-sqlite3@12.9.0/node_modules/better-sqlite3 && npx prebuild-install || npx node-gyp rebuild --release
 
 FROM node:24-alpine AS runner
 WORKDIR /app
