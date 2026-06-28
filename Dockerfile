@@ -36,6 +36,9 @@ COPY --from=builder /app/skills ./skills
 ENV NODE_ENV=production
 ENV OD_WEB_PROD=1
 ENV OD_PORT=7456
+# Trust reverse-proxy (Traefik) and accept same-origin browser requests on
+# public hosts. Local installs keep the loopback default by not setting this.
+ENV OD_ALLOW_REMOTE_DAEMON=1
 
 EXPOSE 7456
 

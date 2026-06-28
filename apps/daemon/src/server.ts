@@ -1271,6 +1271,15 @@ function localOriginFromHeader(value) {
 }
 
 function validateLocalDaemonRequest(req) {
+  // Bypass the loopback-only guard for trusted reverse-proxied deployments
+  // (Traefik / nginx in front of the daemon on a public host). When
+  // OD_ALLOW_REMOTE_DAEMON=1 is set, the daemon trusts X-Forwarded-* headers
+  // and accepts the same origin that the browser used. Default is still
+  // loopback-only so a local install cannot be tricked by a network peer.
+  if (process.env.OD_ALLOW_REMOTE_DAEMON === '1') {
+    return { ok: true, origin: req.get('origin') || null };
+  }
+
   if (!isLoopbackPeerAddress(req.socket?.remoteAddress)) {
     return {
       ok: false,
