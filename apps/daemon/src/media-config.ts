@@ -86,6 +86,11 @@ const ENV_KEYS: Record<string, string[]> = {
   elevenlabs: ['OD_ELEVENLABS_API_KEY', 'ELEVENLABS_API_KEY'],
   fishaudio: ['OD_FISHAUDIO_API_KEY', 'FISH_AUDIO_API_KEY'],
   tavily: ['OD_TAVILY_API_KEY', 'TAVILY_API_KEY'],
+  zhipu: ['OD_ZHIPU_API_KEY', 'ZHIPU_API_KEY', 'GLM_API_KEY'],
+  qwen: ['OD_QWEN_API_KEY', 'QWEN_API_KEY', 'DASHSCOPE_API_KEY'],
+  wan: ['OD_WAN_API_KEY', 'WAN_API_KEY', 'DASHSCOPE_API_KEY'],
+  sensetime: ['OD_SENSETIME_API_KEY', 'SENSETIME_API_KEY', 'SENSENOVA_API_KEY'],
+  openrouter: ['OD_OPENROUTER_API_KEY', 'OPENROUTER_API_KEY'],
 };
 
 // Resolve an `OD_*_DIR` env override using the same semantics as

@@ -110,7 +110,7 @@ const AGENT_BIN_ENV_KEYS = new Map([
 
 // Map a user-picked reasoning effort to one the chosen model will accept.
 // Codex's CLI accepts `none | minimal | low | medium | high | xhigh`, but
-// real models support narrower subsets — gpt-5.2/5.3/5.4/5.5 reject
+// real models support narrower subsets — gpt-5.2/5.3/5.4/5.5/5.6/5.7 reject
 // `minimal`, gpt-5.1 rejects `xhigh`, gpt-5.1-codex-mini accepts only
 // `medium` / `high`.
 // An undefined / 'default' modelId is clamped as if it were gpt-5.5,
@@ -127,7 +127,11 @@ function clampCodexReasoning(modelId, effort) {
     id.startsWith('gpt-5.2') ||
     id.startsWith('gpt-5.3') ||
     id.startsWith('gpt-5.4') ||
-    id.startsWith('gpt-5.5');
+    id.startsWith('gpt-5.5') ||
+    id.startsWith('gpt-5.6') ||
+    id.startsWith('gpt-5.7') ||
+    id === 'o5' ||
+    id === 'o5-mini';
   if (isGpt5LateFamily && effort === 'minimal') return 'low';
   if (id === 'gpt-5.1' && effort === 'xhigh') return 'high';
   if (id === 'gpt-5.1-codex-mini') {
@@ -187,6 +191,9 @@ export const AGENT_DEFS = [
       { id: 'claude-opus-4-5', label: 'claude-opus-4-5' },
       { id: 'claude-sonnet-4-5', label: 'claude-sonnet-4-5' },
       { id: 'claude-haiku-4-5', label: 'claude-haiku-4-5' },
+      { id: 'claude-opus-4-7', label: 'claude-opus-4-7' },
+      { id: 'claude-sonnet-4-6', label: 'claude-sonnet-4-6' },
+      { id: 'claude-haiku-4-6', label: 'claude-haiku-4-6' },
     ],
     // Prompt delivered via stdin to avoid both Linux `spawn E2BIG`
     // (MAX_ARG_STRLEN caps a single argv entry at ~128 KB) and Windows
@@ -230,7 +237,10 @@ export const AGENT_DEFS = [
     // as a hint. Users can supply other ids via the custom-model input.
     fallbackModels: [
       DEFAULT_MODEL_OPTION,
+      { id: 'gpt-5.7', label: 'gpt-5.7' },
+      { id: 'gpt-5.6', label: 'gpt-5.6' },
       { id: 'gpt-5.5', label: 'gpt-5.5' },
+      { id: 'gpt-5.5-codex', label: 'gpt-5.5-codex' },
       { id: 'gpt-5.4', label: 'gpt-5.4' },
       { id: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
       { id: 'gpt-5.3-codex', label: 'gpt-5.3-codex' },
@@ -238,6 +248,8 @@ export const AGENT_DEFS = [
       { id: 'gpt-5.1-codex-mini', label: 'gpt-5.1-codex-mini' },
       { id: 'gpt-5-codex', label: 'gpt-5-codex' },
       { id: 'gpt-5', label: 'gpt-5' },
+      { id: 'o5', label: 'o5' },
+      { id: 'o5-mini', label: 'o5-mini' },
       { id: 'o3', label: 'o3' },
       { id: 'o4-mini', label: 'o4-mini' },
     ],
@@ -349,8 +361,12 @@ export const AGENT_DEFS = [
     versionArgs: ['--version'],
     fallbackModels: [
       DEFAULT_MODEL_OPTION,
+      { id: 'gemini-3-pro', label: 'gemini-3-pro' },
+      { id: 'gemini-3-pro-preview', label: 'gemini-3-pro-preview' },
+      { id: 'gemini-3-flash', label: 'gemini-3-flash' },
       { id: 'gemini-2.5-pro', label: 'gemini-2.5-pro' },
       { id: 'gemini-2.5-flash', label: 'gemini-2.5-flash' },
+      { id: 'gemini-2.5-flash-lite', label: 'gemini-2.5-flash-lite' },
     ],
     // Gemini reads from stdin when `-p` is omitted and stdin is a pipe.
     // Passing the full composed prompt as a CLI arg causes ENAMETOOLONG on
@@ -385,11 +401,21 @@ export const AGENT_DEFS = [
     fallbackModels: [
       DEFAULT_MODEL_OPTION,
       {
+        id: 'anthropic/claude-opus-4-5',
+        label: 'anthropic/claude-opus-4-5',
+      },
+      {
         id: 'anthropic/claude-sonnet-4-5',
         label: 'anthropic/claude-sonnet-4-5',
       },
+      { id: 'openai/gpt-5.5', label: 'openai/gpt-5.5' },
       { id: 'openai/gpt-5', label: 'openai/gpt-5' },
+      { id: 'openai/o5', label: 'openai/o5' },
+      { id: 'google/gemini-3-pro', label: 'google/gemini-3-pro' },
       { id: 'google/gemini-2.5-pro', label: 'google/gemini-2.5-pro' },
+      { id: 'zhipu/glm-5.2', label: 'zhipu/glm-5.2' },
+      { id: 'qwen/qwen3-coder-plus', label: 'qwen/qwen3-coder-plus' },
+      { id: 'deepseek/deepseek-v4-pro', label: 'deepseek/deepseek-v4-pro' },
     ],
     // Prompt delivered via stdin (`opencode run -`) to avoid Windows
     // `spawn ENAMETOOLONG` while preserving OpenCode's structured stream.
@@ -425,12 +451,15 @@ export const AGENT_DEFS = [
       }),
     fallbackModels: [
       DEFAULT_MODEL_OPTION,
+      { id: 'openai-codex:gpt-5.7', label: 'gpt-5.7 (openai-codex:gpt-5.7)' },
+      { id: 'openai-codex:gpt-5.6', label: 'gpt-5.6 (openai-codex:gpt-5.6)' },
       { id: 'openai-codex:gpt-5.5', label: 'gpt-5.5 (openai-codex:gpt-5.5)' },
+      { id: 'openai-codex:gpt-5.5-codex', label: 'gpt-5.5-codex (openai-codex:gpt-5.5-codex)' },
       { id: 'openai-codex:gpt-5.4', label: 'gpt-5.4 (openai-codex:gpt-5.4)' },
-      {
-        id: 'openai-codex:gpt-5.4-mini',
-        label: 'gpt-5.4-mini (openai-codex:gpt-5.4-mini)',
-      },
+      { id: 'openai-codex:gpt-5.4-mini', label: 'gpt-5.4-mini (openai-codex:gpt-5.4-mini)' },
+      { id: 'anthropic:claude-opus-4-5', label: 'claude-opus-4-5 (anthropic:claude-opus-4-5)' },
+      { id: 'anthropic:claude-sonnet-4-5', label: 'claude-sonnet-4-5 (anthropic:claude-sonnet-4-5)' },
+      { id: 'google:gemini-3-pro', label: 'gemini-3-pro (google:gemini-3-pro)' },
     ],
     buildArgs: () => ['acp', '--accept-hooks'],
     streamFormat: 'acp-json-rpc',
@@ -481,7 +510,12 @@ export const AGENT_DEFS = [
       { id: 'auto', label: 'auto' },
       { id: 'sonnet-4', label: 'sonnet-4' },
       { id: 'sonnet-4-thinking', label: 'sonnet-4-thinking' },
+      { id: 'sonnet-4.5', label: 'sonnet-4.5' },
+      { id: 'sonnet-4.5-thinking', label: 'sonnet-4.5-thinking' },
+      { id: 'opus-4.5', label: 'opus-4.5' },
       { id: 'gpt-5', label: 'gpt-5' },
+      { id: 'gpt-5.5', label: 'gpt-5.5' },
+      { id: 'o5', label: 'o5' },
     ],
     // Cursor Agent does not use `-` as a "read prompt from stdin" sentinel.
     // Passing it makes the CLI treat the dash as the literal user prompt,
@@ -524,6 +558,10 @@ export const AGENT_DEFS = [
       DEFAULT_MODEL_OPTION,
       { id: 'qwen3-coder-plus', label: 'qwen3-coder-plus' },
       { id: 'qwen3-coder-flash', label: 'qwen3-coder-flash' },
+      { id: 'qwen3-max', label: 'qwen3-max' },
+      { id: 'qwen3-vl-plus', label: 'qwen3-vl-plus' },
+      { id: 'qwen3-235b', label: 'qwen3-235b' },
+      { id: 'qwen-long', label: 'qwen-long' },
     ],
     // Prompt delivered via stdin (`qwen -`) to avoid Windows
     // `spawn ENAMETOOLONG` for large composed prompts. Qwen Code is a
@@ -640,7 +678,10 @@ export const AGENT_DEFS = [
     fallbackModels: [
       DEFAULT_MODEL_OPTION,
       { id: 'claude-sonnet-4.6', label: 'Claude Sonnet 4.6' },
+      { id: 'claude-opus-4.5', label: 'Claude Opus 4.5' },
       { id: 'gpt-5.2', label: 'GPT-5.2' },
+      { id: 'gpt-5.5', label: 'GPT-5.5' },
+      { id: 'gemini-3-pro', label: 'Gemini 3 Pro' },
     ],
     buildArgs: (_prompt, _imagePaths, extraAllowedDirs = [], options = {}) => {
       const args = [
@@ -686,14 +727,22 @@ export const AGENT_DEFS = [
     fallbackModels: [
       DEFAULT_MODEL_OPTION,
       {
+        id: 'anthropic/claude-opus-4-5',
+        label: 'Claude Opus 4.5 (anthropic)',
+      },
+      {
         id: 'anthropic/claude-sonnet-4-5',
         label: 'Claude Sonnet 4.5 (anthropic)',
       },
-      { id: 'anthropic/claude-opus-4-5', label: 'Claude Opus 4.5 (anthropic)' },
+      { id: 'openai/gpt-5.5', label: 'GPT-5.5 (openai)' },
       { id: 'openai/gpt-5', label: 'GPT-5 (openai)' },
+      { id: 'openai/o5', label: 'o5 (openai)' },
       { id: 'openai/o4-mini', label: 'o4-mini (openai)' },
+      { id: 'google/gemini-3-pro', label: 'Gemini 3 Pro (google)' },
       { id: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro (google)' },
       { id: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash (google)' },
+      { id: 'zhipu/glm-5.2', label: 'GLM 5.2 (zhipu)' },
+      { id: 'qwen/qwen3-max', label: 'Qwen3 Max (qwen)' },
     ],
     // Thinking level presets mapped to pi's --thinking flag.
     reasoningOptions: [
@@ -824,6 +873,8 @@ export const AGENT_DEFS = [
       DEFAULT_MODEL_OPTION,
       { id: 'deepseek-v4-pro', label: 'deepseek-v4-pro' },
       { id: 'deepseek-v4-flash', label: 'deepseek-v4-flash' },
+      { id: 'deepseek-r1', label: 'deepseek-r1' },
+      { id: 'deepseek-v3.5', label: 'deepseek-v3.5' },
     ],
     // DeepSeek's exec mode requires the prompt as a positional argument
     // (no `-` stdin sentinel; `prompt: String` is a required clap field).

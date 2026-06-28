@@ -46,6 +46,11 @@ export const MEDIA_PROVIDERS: MediaProvider[] = [
   { id: 'elevenlabs', label: 'ElevenLabs', hint: 'Voice / SFX', integrated: false },
   { id: 'fishaudio', label: 'FishAudio', hint: 'Speech / voice clone', integrated: true, defaultBaseUrl: 'https://api.fish.audio' },
   { id: 'tavily', label: 'Tavily Search', hint: 'Agent-callable web research', integrated: true, defaultBaseUrl: 'https://api.tavily.com' },
+  { id: 'zhipu', label: 'Zhipu GLM', hint: 'GLM-5.2 chat · CogView-4 image · CogVideoX video', integrated: false, defaultBaseUrl: 'https://open.bigmodel.cn/api/paas/v4', supportsCustomModel: true },
+  { id: 'qwen', label: 'Alibaba Qwen (DashScope)', hint: 'Qwen3-Max / Qwen-Image / Wan2.5 video', integrated: false, defaultBaseUrl: 'https://dashscope.aliyuncs.com/api/v1', supportsCustomModel: true },
+  { id: 'wan', label: 'Alibaba Wan', hint: 'Wan2.5-T2V / Wan2.5-I2V — text + image to video', integrated: false, defaultBaseUrl: 'https://dashscope.aliyuncs.com/api/v1' },
+  { id: 'sensetime', label: 'SenseTime SenseChat', hint: 'SenseChat-5 / SenseChat-Vision / SenseTime image', integrated: false, defaultBaseUrl: 'https://api.sensenova.cn/compatible-mode/v1' },
+  { id: 'openrouter', label: 'OpenRouter', hint: 'Any model via openrouter.ai (Claude, GPT, Gemini, GLM, Qwen…)', integrated: false, defaultBaseUrl: 'https://openrouter.ai/api/v1', supportsCustomModel: true },
   { id: 'stub', label: 'Stub (placeholder)', hint: 'Deterministic local placeholder bytes', integrated: true },
 ];
 
@@ -79,6 +84,17 @@ export const IMAGE_MODELS: MediaModel[] = [
   { id: 'sd-3.5', label: 'stable-diffusion-3.5', hint: 'Fal · SD 3.5', provider: 'fal', caps: ['t2i'] },
 
   { id: 'midjourney-v7', label: 'midjourney-v7', hint: 'Midjourney · via proxy', provider: 'midjourney', caps: ['t2i'] },
+
+  { id: 'cogview-4', label: 'cogview-4', hint: 'Zhipu · 4K text-to-image', provider: 'zhipu', caps: ['t2i'] },
+  { id: 'cogview-3-plus', label: 'cogview-3-plus', hint: 'Zhipu · flagship', provider: 'zhipu', caps: ['t2i', 'i2i'] },
+  { id: 'glm-image', label: 'glm-image', hint: 'Zhipu · GLM-Image (multimodal gen)', provider: 'zhipu', caps: ['t2i', 'i2i'] },
+
+  { id: 'qwen-image-plus', label: 'qwen-image-plus', hint: 'Alibaba · Qwen-Image flagship', provider: 'qwen', caps: ['t2i', 'i2i'] },
+  { id: 'qwen-image', label: 'qwen-image', hint: 'Alibaba · Qwen-Image', provider: 'qwen', caps: ['t2i', 'i2i'] },
+  { id: 'wan2.5-t2i', label: 'wan2.5-t2i', hint: 'Alibaba · Wan2.5 text-to-image', provider: 'wan', caps: ['t2i'] },
+
+  { id: 'sensemirage-v6', label: 'sensemirage-v6', hint: 'SenseTime · flagship', provider: 'sensetime', caps: ['t2i'] },
+  { id: 'sensechat-vision', label: 'sensechat-vision', hint: 'SenseTime · multimodal vision', provider: 'sensetime', caps: ['i2i'] },
 ];
 
 export const VIDEO_MODELS: MediaModel[] = [
@@ -99,6 +115,19 @@ export const VIDEO_MODELS: MediaModel[] = [
 
   { id: 'sora-2', label: 'sora-2', hint: 'OpenAI · via Fal', provider: 'fal', caps: ['t2v'] },
   { id: 'sora-2-pro', label: 'sora-2-pro', hint: 'OpenAI · via Fal', provider: 'fal', caps: ['t2v'] },
+
+  { id: 'wan2.5-t2v', label: 'wan2.5-t2v', hint: 'Alibaba · Wan 2.5 text-to-video', provider: 'wan', caps: ['t2v', 'audio'], default: true },
+  { id: 'wan2.5-i2v', label: 'wan2.5-i2v', hint: 'Alibaba · Wan 2.5 image-to-video', provider: 'wan', caps: ['i2v', 'audio'] },
+  { id: 'wan2.2-t2v', label: 'wan2.2-t2v', hint: 'Alibaba · Wan 2.2 text-to-video', provider: 'wan', caps: ['t2v'] },
+  { id: 'wan2.2-i2v', label: 'wan2.2-i2v', hint: 'Alibaba · Wan 2.2 image-to-video', provider: 'wan', caps: ['i2v'] },
+
+  { id: 'cogvideox-5b', label: 'cogvideox-5b', hint: 'Zhipu · CogVideoX 5B', provider: 'zhipu', caps: ['t2v', 'i2v'] },
+  { id: 'cogvideox-3', label: 'cogvideox-3', hint: 'Zhipu · CogVideoX 3', provider: 'zhipu', caps: ['t2v', 'i2v'] },
+
+  { id: 'fal-kling-2.5', label: 'kling-2.5', hint: 'Fal · Kling 2.5 Turbo', provider: 'fal', caps: ['t2v', 'i2v'] },
+  { id: 'fal-veo-3.5', label: 'veo-3.5', hint: 'Fal · Veo 3.5', provider: 'fal', caps: ['t2v', 'i2v', 'audio'] },
+  { id: 'fal-hailuo-02', label: 'hailuo-02', hint: 'Fal · MiniMax Hailuo-02', provider: 'fal', caps: ['t2v'] },
+  { id: 'fal-wan-25', label: 'wan-2.5', hint: 'Fal · Wan 2.5 (open-source)', provider: 'fal', caps: ['t2v'] },
 
   { id: 'minimax-video-01', label: 'video-01', hint: 'MiniMax · Hailuo', provider: 'minimax', caps: ['t2v', 'i2v'] },
   { id: 'hyperframes-html', label: 'hyperframes-html', hint: 'HyperFrames · local HTML renderer', provider: 'hyperframes', caps: ['t2v'] },
