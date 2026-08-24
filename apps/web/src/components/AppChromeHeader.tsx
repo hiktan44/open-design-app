@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { useT } from '../i18n';
 import { Icon } from './Icon';
+import { LangSwitch } from './LangSwitch';
 
 interface Props {
   actions?: ReactNode;
@@ -36,7 +37,10 @@ export function AppChromeHeader({ actions, children, onBack, backLabel }: Props)
       ) : null}
       {children ? <div className="app-chrome-content">{children}</div> : null}
       <div className="app-chrome-drag" aria-hidden />
-      {actions ? <div className="app-chrome-actions">{actions}</div> : null}
+      <div className="app-chrome-actions">
+        <LangSwitch />
+        {actions}
+      </div>
     </header>
   );
 }

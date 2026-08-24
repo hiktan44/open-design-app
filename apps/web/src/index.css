@@ -14943,3 +14943,47 @@ body.entry-resizing { cursor: col-resize; user-select: none; }
     margin-right: auto;
   }
 }
+
+/* Language switcher styles */
+.lang-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-panel);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.lang-switch:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-subtle);
+}
+
+.lang-switch:active {
+  transform: translateY(1px);
+}
+
+.lang-current {
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.lang-icon {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+/* Dark mode support for language switcher */
+[data-theme="dark"] .lang-switch {
+  background: var(--bg-panel);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .lang-switch:hover {
+  border-color: var(--border-strong);
+}
