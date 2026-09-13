@@ -1971,6 +1971,7 @@ function displayTabFor(
   }
   const entryTitle: Record<EntryHomeView, string> = {
     home: t('entry.navHome'),
+    landing: 'Vitrin & Demolar',
     onboarding: t('settings.welcomeTitle'),
     projects: t('entry.navProjects'),
     tasks: t('entry.navTasks'),
@@ -1989,6 +1990,7 @@ function displayTabFor(
   };
   const entryIcon: Record<EntryHomeView, IconName> = {
     home: 'home',
+    landing: 'sparkles',
     onboarding: 'sparkles',
     projects: 'folder',
     tasks: 'kanban',

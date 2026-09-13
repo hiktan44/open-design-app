@@ -128,6 +128,7 @@ import {
   type AmrBalanceGateScope,
 } from '../runtime/amr-balance-gate';
 import { HomeView, seedHomeComposerPrompt } from './HomeView';
+import { ShowcaseLandingPage } from './ShowcaseLandingPage';
 import { entryStrategyRoutingFields } from './entry-strategy-routing';
 import { EntryBlankState } from './EntryBlankState';
 import { RecentProjectsStrip } from './RecentProjectsStrip';
@@ -1774,6 +1775,11 @@ export function EntryShell({
               view === 'home' ? '' : 'entry-main__inner--wide',
             ].filter(Boolean).join(' ')}
           >
+            {view === 'landing' ? (
+              <div data-testid="entry-view-landing" style={{ width: '100%', minHeight: '100%' }}>
+                <ShowcaseLandingPage onEnterStudio={() => changeView('home')} />
+              </div>
+            ) : null}
             <div className="entry-main__view-home" data-testid="entry-view-home" data-active={view === 'home' ? 'true' : 'false'} {...inactiveViewProps(view === 'home')}>
               <HomeView
                 isActive={view === 'home'}

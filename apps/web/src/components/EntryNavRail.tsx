@@ -1809,6 +1809,15 @@ export function EntryNavRail({
         >
           <Icon name="globe" size={16} />
         </NavButton>
+        <NavButton
+          active={view === 'landing'}
+          ariaLabel="✨ Vitrin & Canlı Demolar"
+          label="✨ Vitrin & Demolar"
+          onClick={() => selectView('landing')}
+          testId="entry-nav-landing"
+        >
+          <Icon name="sparkles" size={16} />
+        </NavButton>
 
         {context ? (
           <div className="entry-nav-rail__team-section">
