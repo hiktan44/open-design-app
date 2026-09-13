@@ -347,44 +347,36 @@ export function ShowcaseLandingPage({ onEnterStudio }: ShowcaseLandingPageProps)
 
   const heroWebTemplates = [
     {
-      id: 'landing',
-      title: 'Next-Gen SaaS & Cloud Landing Page',
-      badge: '🚀 SaaS & Startup',
-      image: '/community-templates/open-design-landing.webp',
-      url: 'https://opendesign.studio/preview/cyber-saas',
-      meta: 'Dark Glassmorphism · Parallax Hero · React 18',
+      id: 'turkish-saas',
+      title: 'Yapay Zeka ile Web Sitenizi Saniyeler İçinde Oluşturun',
+      badge: '🇹🇷 Türkçe AI Web Platformu',
+      image: '/showcase/turkish-saas-showcase.jpg',
+      url: 'https://opendesign.studio/tr/yapay-zeka-web',
+      meta: 'Türkçe Arayüz · Cam Efektleri · Canlı Metrikler',
     },
     {
-      id: 'dashboard',
-      title: 'AI Analytics & Real-Time Metrics Cockpit',
-      badge: '📊 AI Dashboard',
-      image: '/community-templates/dashboard.webp',
-      url: 'https://opendesign.studio/preview/ai-analytics',
-      meta: 'Canlı Metrikler · NPU Grafikleri · Responsive Grid',
+      id: 'turkish-studio',
+      title: 'Kusursuz Mekanlar, Zamansız Tasarımlar',
+      badge: '🏛️ Türkçe Lüks Stüdyo',
+      image: '/showcase/turkish-studio-showcase.jpg',
+      url: 'https://kusursuzmekanlar.com/anasayfa',
+      meta: 'Zarif Tipografi · Villa Galerisi · Minimalist Tasarım',
     },
     {
-      id: 'pitch',
-      title: 'Artisan Architecture & Minimalist Design Portfolio',
-      badge: '🏛️ Lüks Portfolyo',
-      image: '/community-templates/pitch-deck.webp',
-      url: 'https://opendesign.studio/preview/studio-aura',
-      meta: 'Zarif Serif · Galeri Grid · Monokrom Tipografi',
+      id: 'live-artifact',
+      title: 'Ekip Çalışma Alanı & Dinamik Görev Paneli',
+      badge: '📋 Takım Yönetim Paneli',
+      image: '/community-templates/live-artifact.webp',
+      url: 'https://opendesign.studio/tr/takim-paneli',
+      meta: 'Canlı Raporlama · Görev Akışı · Modern Web App',
     },
     {
-      id: 'kanban',
-      title: 'Interactive Agile Project & Task Application',
-      badge: '📋 Modern Web App',
+      id: 'qelora',
+      title: 'Kreatif Ajans & Doğa Portfolyo Deneyimi',
+      badge: '🎨 Modern Ajans Portfolyosu',
       image: '/community-templates/kanban-board.webp',
-      url: 'https://opendesign.studio/preview/team-kanban',
-      meta: 'Sürükle-Bırak · Canlı Senkronizasyon · Durum Kartları',
-    },
-    {
-      id: 'blog',
-      title: 'Editorial High-Contrast Tech Magazine & Journal',
-      badge: '📰 Editoryal Blog',
-      image: '/community-templates/blog-post.webp',
-      url: 'https://opendesign.studio/preview/tech-journal',
-      meta: 'Okuma Modu · Yüksek Tipografi Kontrastı · SEO Optimize',
+      url: 'https://opendesign.studio/tr/kreatif-ajans',
+      meta: '3D Doğa Sahnesi · Sanat Yönetimi · Yüksek Dönüşüm',
     },
   ];
 
@@ -544,10 +536,10 @@ export function ShowcaseLandingPage({ onEnterStudio }: ShowcaseLandingPageProps)
               </div>
 
               {/* Floating Mobile Phone Mockup */}
-              <div className={styles.floatingMobileMockup} title="Mobil Uyumlu Görünüm">
+              <div className={styles.floatingMobileMockup} title="Mobil Uyumlu Türkçe Tasarım">
                 <img
-                  src="/community-templates/mobile-flow.webp"
-                  alt="Mobil Web Tasarımı"
+                  src="/showcase/turkish-saas-showcase.jpg"
+                  alt="Mobil Uyumlu Türkçe Tasarım"
                   loading="lazy"
                 />
               </div>
