@@ -26,6 +26,7 @@ import { reasonixAgentDef } from './defs/reasonix.js';
 import { mimoAgentDef } from './defs/mimo.js';
 import { atomcodeAgentDef } from './defs/atomcode.js';
 import { ollamaAgentDef } from './defs/ollama.js';
+import { swarmAgentDef } from './defs/swarm.js';
 import { readLocalAgentProfileDefs as readLocalAgentProfileDefsFromFile } from './local-profiles.js';
 import type { RuntimeAgentDef } from './types.js';
 
@@ -67,6 +68,7 @@ export const SHIPPED_AGENT_DEFS: RuntimeAgentDef[] = [
   mimoAgentDef,
   atomcodeAgentDef,
   ollamaAgentDef,
+  swarmAgentDef,
 ];
 
 export function readLocalAgentProfileDefs(

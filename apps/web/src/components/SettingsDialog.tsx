@@ -872,6 +872,7 @@ const AGENT_SHORT_DESCRIPTIONS: Record<string, string> = {
   'grok-build': 'xAI coding CLI',
   reasonix: 'DeepSeek native coding CLI',
   ollama: 'Local LLM runner (http://localhost:11434)',
+  swarm: '3-Phase Autonomous Design Swarm',
 };
 
 function cleanAgentVersionLabel(
