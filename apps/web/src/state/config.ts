@@ -144,13 +144,21 @@ export const KNOWN_PROVIDERS: KnownProvider[] = [
     label: 'Anthropic (Claude)',
     protocol: 'anthropic',
     baseUrl: 'https://api.anthropic.com',
-    preferredModels: ['claude-sonnet-4-5', 'claude-opus-4-5', 'claude-haiku-4-5'],
+    preferredModels: [
+      'claude-opus-5',
+      'claude-fable-5.1',
+      'claude-sonnet-5',
+      'claude-sonnet-4-5',
+      'claude-opus-4-5',
+      'claude-haiku-4-5',
+    ],
   },
   {
     label: 'DeepSeek — Anthropic',
     protocol: 'anthropic',
     baseUrl: 'https://api.deepseek.com/anthropic',
     preferredModels: [
+      'deepseek-v4.1-flash',
       'deepseek-v4-flash',
       'deepseek-v4-pro',
     ],
@@ -161,6 +169,7 @@ export const KNOWN_PROVIDERS: KnownProvider[] = [
     protocol: 'anthropic',
     baseUrl: 'https://api.minimax.io/anthropic',
     preferredModels: [
+      'minimax-m3',
       'MiniMax-M2.7-highspeed',
       'MiniMax-M2.7',
       'MiniMax-M2.5-highspeed',
@@ -175,6 +184,7 @@ export const KNOWN_PROVIDERS: KnownProvider[] = [
     protocol: 'anthropic',
     baseUrl: 'https://api.minimaxi.com/anthropic',
     preferredModels: [
+      'minimax-m3',
       'MiniMax-M2.7-highspeed',
       'MiniMax-M2.7',
       'MiniMax-M2.5-highspeed',
@@ -188,7 +198,18 @@ export const KNOWN_PROVIDERS: KnownProvider[] = [
     label: 'OpenAI',
     protocol: 'openai',
     baseUrl: 'https://api.openai.com/v1',
-    preferredModels: ['gpt-4o', 'gpt-4o-mini', 'o3', 'o4-mini'],
+    preferredModels: [
+      'gpt-5.6-sol',
+      'gpt-5.6',
+      'gpt-6-astra',
+      'astra-6',
+      'gpt-5.5',
+      'gpt-4.5-preview',
+      'gpt-4o',
+      'gpt-4o-mini',
+      'o3',
+      'o4-mini',
+    ],
   },
   {
     label: 'Atlas Cloud',
@@ -237,6 +258,7 @@ export const KNOWN_PROVIDERS: KnownProvider[] = [
     protocol: 'google',
     baseUrl: 'https://generativelanguage.googleapis.com',
     preferredModels: [
+      'gemini-3.8-flash',
       'gemini-3.5-flash',
       'gemini-3.1-pro-preview',
       'gemini-3-flash-preview',

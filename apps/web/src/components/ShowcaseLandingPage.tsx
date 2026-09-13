@@ -626,117 +626,117 @@ export function ShowcaseLandingPage({ onEnterStudio }: ShowcaseLandingPageProps)
         </div>
 
         <div className={styles.llmGrid}>
-          {/* Claude 3.7 Sonnet */}
+          {/* Anthropic Opus 5 & Fable 5.1 */}
           <div className={`${styles.llmCard} ${styles.llmCardLeader}`}>
             <div className={styles.llmHeader}>
               <div className={styles.llmLogoWrap}>
                 <div className={styles.llmIcon} style={{ background: '#d97706' }}>🟣</div>
                 <div>
-                  <div className={styles.llmName}>Claude 3.7 Sonnet</div>
-                  <div className={styles.llmProvider}>Anthropic (Hybrid Reasoning)</div>
+                  <div className={styles.llmName}>Claude Opus 5 & Fable 5.1</div>
+                  <div className={styles.llmProvider}>Anthropic (Yeni Nesil Akıl Yürütme)</div>
                 </div>
               </div>
               <span className={styles.llmBadge} style={{ background: 'rgba(217, 119, 6, 0.2)', color: '#fbbf24', borderColor: '#d97706' }}>
-                🏆 Sektör Lideri
+                🏆 Sektörün Zirvesi
               </span>
             </div>
             <p style={{ fontSize: '13px', color: 'rgba(240,243,248,0.7)', lineHeight: 1.5 }}>
-              Arayüz estetiği, karmaşık Tailwind CSS, SVG mikro-etkileşimler ve hatasız React mimarisinde tartışmasız en zevkli ve tutarlı modeldir.
+              Fable 5.1 ve Opus 5'in devrimsel çok boyutlu akıl yürütmesi, modern Tailwind, karmaşık mikro etkileşimler ve sıfır hatalı UI hiyerarşisi üretir.
             </p>
             <ul className={styles.llmProsList}>
-              <li><span className={styles.llmProsCheck}>✓</span> Üstün görsel zevk ve modern tipografi hakimiyeti</li>
-              <li><span className={styles.llmProsCheck}>✓</span> "Extended Thinking" ile tek seferde kusursuz frontend</li>
-              <li><span className={styles.llmProsCheck}>✓</span> Glassmorphism ve CSS 3D animasyonlarda lider</li>
+              <li><span className={styles.llmProsCheck}>✓</span> Fable 5.1 ile derin estetik ve üstün tipografi</li>
+              <li><span className={styles.llmProsCheck}>✓</span> Opus 5 ile karmaşık tasarım mimarisini tek adımda çözme</li>
+              <li><span className={styles.llmProsCheck}>✓</span> Hatasız animasyon ve CSS 3D kompozisyonları</li>
             </ul>
           </div>
 
-          {/* GPT-4o */}
+          {/* OpenAI GPT-5.6 Sol & Astra 6 */}
           <div className={styles.llmCard}>
             <div className={styles.llmHeader}>
               <div className={styles.llmLogoWrap}>
                 <div className={styles.llmIcon} style={{ background: '#10a37f' }}>🟢</div>
                 <div>
-                  <div className={styles.llmName}>GPT-4o & GPT-4.5</div>
-                  <div className={styles.llmProvider}>OpenAI (Multimodal)</div>
+                  <div className={styles.llmName}>GPT-5.6 Sol & Astra 6</div>
+                  <div className={styles.llmProvider}>OpenAI (Otonom Tasarım Ajanı)</div>
                 </div>
               </div>
-              <span className={styles.llmBadge}>Resimden Koda</span>
+              <span className={styles.llmBadge}>⚡ Otonom Üretim</span>
             </div>
             <p style={{ fontSize: '13px', color: 'rgba(240,243,248,0.7)', lineHeight: 1.5 }}>
-              Yüklediğiniz bir ekran görüntüsünü, el çizimini veya Figma tasarımını saniyeler içinde canlı koda dönüştürmede çok etkilidir.
+              Astra 6 ve 5.6 Sol motoru; el çizimi wireframe'lerden tam teşekküllü web uygulamalarına, canlı state yönetimi ve API entegrasyonu kurar.
             </p>
             <ul className={styles.llmProsList}>
-              <li><span className={styles.llmProsCheck}>✓</span> Ekran görüntüsünden ve taslaktan sayfa üretimi</li>
-              <li><span className={styles.llmProsCheck}>✓</span> Zengin React bileşen ekosistemi (Radix, Lucide)</li>
-              <li><span className={styles.llmProsCheck}>✓</span> Güçlü mantıksal veri akışı ve form doğrulamaları</li>
+              <li><span className={styles.llmProsCheck}>✓</span> GPT-5.6 Sol ile ultra hızlı frontend sentezi</li>
+              <li><span className={styles.llmProsCheck}>✓</span> Astra 6 ile çok sayfalı dinamik web uygulamaları</li>
+              <li><span className={styles.llmProsCheck}>✓</span> Görsel eskizleri doğrudan çalışan React koduna dönüştürme</li>
             </ul>
           </div>
 
-          {/* Gemini 2.0 Flash */}
+          {/* Gemini 3.8 Flash */}
           <div className={styles.llmCard}>
             <div className={styles.llmHeader}>
               <div className={styles.llmLogoWrap}>
                 <div className={styles.llmIcon} style={{ background: '#3b82f6' }}>🔵</div>
                 <div>
-                  <div className={styles.llmName}>Gemini 2.0 Flash</div>
+                  <div className={styles.llmName}>Gemini 3.8 Flash</div>
                   <div className={styles.llmProvider}>Google DeepMind</div>
                 </div>
               </div>
-              <span className={styles.llmBadge}>⚡ Ultra Hızlı</span>
+              <span className={styles.llmBadge}>⚡ Işık Hızında</span>
             </div>
             <p style={{ fontSize: '13px', color: 'rgba(240,243,248,0.7)', lineHeight: 1.5 }}>
-              Milisaniyeler mertebesinde yanıt süresi ve devasa 1M+ token bağlamı sayesinde canlı anlık önizlemeler ve hızlı iterasyon için mükemmeldir.
+              Gemini 3.8 Flash'ın anlık milisaniyelik yanıt süresi ve devasa bağlam penceresi ile tasarım değişiklikleri kodda gerçek zamanlı yansır.
             </p>
             <ul className={styles.llmProsList}>
-              <li><span className={styles.llmProsCheck}>✓</span> Anında canlı kod akışı ve yüksek hız</li>
-              <li><span className={styles.llmProsCheck}>✓</span> Çok düşük token maliyeti</li>
-              <li><span className={styles.llmProsCheck}>✓</span> Devasa tasarım sistemlerini tek seferde belleğe alma</li>
+              <li><span className={styles.llmProsCheck}>✓</span> Canlı 60 FPS kod ve CSS önizleme akışı</li>
+              <li><span className={styles.llmProsCheck}>✓</span> 2M+ devasa bağlam ile tüm projeyi tek seferde analiz</li>
+              <li><span className={styles.llmProsCheck}>✓</span> Düşük gecikme ile interaktif tasarım düzenlemeleri</li>
             </ul>
           </div>
 
-          {/* DeepSeek R1 */}
+          {/* DeepSeek 4.1 Flash & GLM 5.3 Flash */}
           <div className={styles.llmCard}>
             <div className={styles.llmHeader}>
               <div className={styles.llmLogoWrap}>
                 <div className={styles.llmIcon} style={{ background: '#4f46e5' }}>🟣</div>
                 <div>
-                  <div className={styles.llmName}>DeepSeek R1 / V3</div>
-                  <div className={styles.llmProvider}>DeepSeek</div>
+                  <div className={styles.llmName}>DeepSeek 4.1 & GLM 5.3</div>
+                  <div className={styles.llmProvider}>DeepSeek / Zhipu AI</div>
                 </div>
               </div>
-              <span className={styles.llmBadge}>Bütçe Dostu</span>
+              <span className={styles.llmBadge}>Fiyat / Performans</span>
             </div>
             <p style={{ fontSize: '13px', color: 'rgba(240,243,248,0.7)', lineHeight: 1.5 }}>
-              Derin matematiksel akıl yürütme yeteneği ile karmaşık CSS Grid düzenlerini, veri grafiklerini ve bütçe dostu büyük projeleri kolayca kodlar.
+              DeepSeek 4.1 Flash ve GLM 5.3 Flash; gelişmiş matematiksel CSS Grid yerleşimlerini, esnek layoutları en uygun maliyetle üretir.
             </p>
             <ul className={styles.llmProsList}>
-              <li><span className={styles.llmProsCheck}>✓</span> En yüksek fiyat/performans oranı</li>
-              <li><span className={styles.llmProsCheck}>✓</span> Karmaşık matematiksel layout hesaplamaları</li>
-              <li><span className={styles.llmProsCheck}>✓</span> Açık ağırlıklı model gücü</li>
+              <li><span className={styles.llmProsCheck}>✓</span> DeepSeek 4.1 Flash ile bütçe dostu sınırsız deneme</li>
+              <li><span className={styles.llmProsCheck}>✓</span> GLM 5.3 Flash ile hızlı ve tutarlı bileşen üretimi</li>
+              <li><span className={styles.llmProsCheck}>✓</span> Karmaşık matematiksel layout ve responsive hesaplamaları</li>
             </ul>
           </div>
 
-          {/* Ollama / Qwen 2.5 Coder */}
+          {/* MiniMax 3 & Ollama */}
           <div className={styles.llmCard}>
             <div className={styles.llmHeader}>
               <div className={styles.llmLogoWrap}>
                 <div className={styles.llmIcon} style={{ background: '#0284c7' }}>🦙</div>
                 <div>
-                  <div className={styles.llmName}>Ollama (Qwen Coder)</div>
-                  <div className={styles.llmProvider}>Yerel & Çevrimdışı Model</div>
+                  <div className={styles.llmName}>MiniMax 3 & Ollama</div>
+                  <div className={styles.llmProvider}>Yerel & Yüksek Hızlı Mimari</div>
                 </div>
               </div>
               <span className={styles.llmBadge} style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', borderColor: '#10b981' }}>
-                🔒 %100 Gizlilik
+                🔒 %100 Gizlilik & Güç
               </span>
             </div>
             <p style={{ fontSize: '13px', color: 'rgba(240,243,248,0.7)', lineHeight: 1.5 }}>
-              İnternet bağlantısı olmadan, hiçbir veriyi dışarı göndermeden kendi donanımınızda çalışan sıfır maliyetli web sayfası üretim motoru.
+              MiniMax 3'ün yüksek hız kapasitesi ve Ollama yerel çalışma gücüyle, şirket içi projeleri internete çıkmadan tamamen yerelde üretin.
             </p>
             <ul className={styles.llmProsList}>
-              <li><span className={styles.llmProsCheck}>✓</span> Sıfır API maliyeti, sınırsız üretim</li>
-              <li><span className={styles.llmProsCheck}>✓</span> Kodlarınız ve verileriniz asla bilgisayarınızdan çıkmaz</li>
-              <li><span className={styles.llmProsCheck}>✓</span> Kurumsal intranet projeleri için ideal</li>
+              <li><span className={styles.llmProsCheck}>✓</span> MiniMax 3 ile ultra hızlı token üretimi</li>
+              <li><span className={styles.llmProsCheck}>✓</span> Yerel Ollama ile veriler cihazınızda kalır, sıfır API ücreti</li>
+              <li><span className={styles.llmProsCheck}>✓</span> Gizlilik odaklı kurumsal çözümler için ideal</li>
             </ul>
           </div>
         </div>
