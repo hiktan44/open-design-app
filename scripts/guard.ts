@@ -149,9 +149,12 @@ const residualAllowedExactPaths = new Set([
   "tools/pack/resources/mac/notarize.cjs",
   // electron-builder hook path; CJS compatibility entry used by tools-pack desktop builds.
   "tools/pack/resources/web-standalone-after-pack.cjs",
+  // PWA Service Worker for web offline caching
+  "apps/web/public/sw.js",
 ]);
 
 const residualAllowedPathPrefixes = [
+  "agent-teams-ai/",
   "apps/daemon/dist/",
   "apps/web/.next/",
   "apps/web/out/",

@@ -5,6 +5,7 @@ import { amrHandoffDeviceId, attributedAmrUrl, recordAmrEntry } from '../analyti
 import { useAnalytics } from '../analytics/provider';
 import { useT } from '../i18n';
 import { AgentIcon } from './AgentIcon';
+import { GoogleSignInButton } from './GoogleSignInButton';
 import { modelProviderIconSrc } from './modelProviderIcon';
 import { RemixIcon } from './RemixIcon';
 import {
@@ -844,6 +845,18 @@ export function AvatarMenu({
               is unreachable from here. Pinned to the bottom of the scroll port
               like the home switcher's, so a long model list cannot scroll it
               away. */}
+          <div
+            style={{
+              padding: '8px 12px',
+              borderBottom: '1px solid var(--border-subtle, rgba(255,255,255,0.06))',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <GoogleSignInButton variant="compact" />
+          </div>
+
           <button
             type="button"
             className="avatar-item avatar-item--pinned"

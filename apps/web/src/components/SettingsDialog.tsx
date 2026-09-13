@@ -45,6 +45,7 @@ import { AgentIcon } from './AgentIcon';
 import { AgentDiagnosticRow } from './AgentDiagnosticRow';
 import { DeepSeekHarnessSetupDialog } from './DeepSeekHarnessSetupDialog';
 import { AmrLoginPill } from './AmrLoginPill';
+import { GoogleSignInButton } from './GoogleSignInButton';
 import { PlanBadge } from './PlanBadge';
 import { orderAgentsWithOpenDesignFirst } from './agentOrdering';
 import {
@@ -4545,6 +4546,32 @@ export function SettingsDialog({
                   />
                 </div>
               ) : null}
+
+              <div
+                className="settings-google-signin-card"
+                style={{
+                  marginTop: '12px',
+                  marginBottom: '16px',
+                  padding: '14px 16px',
+                  borderRadius: '10px',
+                  background: 'var(--bg-subtle, rgba(255,255,255,0.03))',
+                  border: '1px solid var(--border-color, rgba(255,255,255,0.08))',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '16px',
+                }}
+              >
+                <div>
+                  <strong style={{ fontSize: '13px', display: 'block', marginBottom: '2px' }}>
+                    Google Hesabı ile Giriş
+                  </strong>
+                  <p style={{ margin: 0, fontSize: '12px', opacity: 0.75 }}>
+                    Google OAuth 2.0 PKCE güvencesiyle güvenli tek tıkla oturum açın.
+                  </p>
+                </div>
+                <GoogleSignInButton variant="compact" />
+              </div>
               {cfg.mode === 'api' ? (
                 <div
                   className="protocol-chips protocol-chips--providers"
