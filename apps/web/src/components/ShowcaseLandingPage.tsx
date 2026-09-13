@@ -345,6 +345,52 @@ export function ShowcaseLandingPage({ onEnterStudio }: ShowcaseLandingPageProps)
   const [simGenerating, setSimGenerating] = useState(false);
   const [simStep, setSimStep] = useState(100);
 
+  const heroWebTemplates = [
+    {
+      id: 'landing',
+      title: 'Next-Gen SaaS & Cloud Landing Page',
+      badge: '🚀 SaaS & Startup',
+      image: '/community-templates/open-design-landing.webp',
+      url: 'https://opendesign.studio/preview/cyber-saas',
+      meta: 'Dark Glassmorphism · Parallax Hero · React 18',
+    },
+    {
+      id: 'dashboard',
+      title: 'AI Analytics & Real-Time Metrics Cockpit',
+      badge: '📊 AI Dashboard',
+      image: '/community-templates/dashboard.webp',
+      url: 'https://opendesign.studio/preview/ai-analytics',
+      meta: 'Canlı Metrikler · NPU Grafikleri · Responsive Grid',
+    },
+    {
+      id: 'pitch',
+      title: 'Artisan Architecture & Minimalist Design Portfolio',
+      badge: '🏛️ Lüks Portfolyo',
+      image: '/community-templates/pitch-deck.webp',
+      url: 'https://opendesign.studio/preview/studio-aura',
+      meta: 'Zarif Serif · Galeri Grid · Monokrom Tipografi',
+    },
+    {
+      id: 'kanban',
+      title: 'Interactive Agile Project & Task Application',
+      badge: '📋 Modern Web App',
+      image: '/community-templates/kanban-board.webp',
+      url: 'https://opendesign.studio/preview/team-kanban',
+      meta: 'Sürükle-Bırak · Canlı Senkronizasyon · Durum Kartları',
+    },
+    {
+      id: 'blog',
+      title: 'Editorial High-Contrast Tech Magazine & Journal',
+      badge: '📰 Editoryal Blog',
+      image: '/community-templates/blog-post.webp',
+      url: 'https://opendesign.studio/preview/tech-journal',
+      meta: 'Okuma Modu · Yüksek Tipografi Kontrastı · SEO Optimize',
+    },
+  ];
+
+  const [selectedHeroTemplate, setSelectedHeroTemplate] = useState(0);
+  const currentHeroTemplate = heroWebTemplates[selectedHeroTemplate] ?? heroWebTemplates[0]!;
+
   const presets = [
     {
       title: 'SaaS Analiz ve Raporlama Paneli',
@@ -431,7 +477,7 @@ export function ShowcaseLandingPage({ onEnterStudio }: ShowcaseLandingPageProps)
         <div className={styles.heroContent}>
           <div className={styles.pillTag}>
             <span>✨</span>
-            <span>Claude 3.7 Sonnet & GPT-4o & Ollama Destekli</span>
+            <span>Opus 5 & GPT-5.6 Sol & Gemini 3.8 Flash Destekli</span>
           </div>
 
           <h1 className={styles.heroTitle}>
@@ -453,6 +499,101 @@ export function ShowcaseLandingPage({ onEnterStudio }: ShowcaseLandingPageProps)
             <a href="#showcase" className={styles.btnCtaSecondary} style={{ display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}>
               <span>Canlı Örnekleri İncele ↓</span>
             </a>
+          </div>
+
+          {/* ─────────────────────────────────────────────────────────────
+              Interactive Web Showcase Visuals in Hero
+              ───────────────────────────────────────────────────────────── */}
+          <div className={styles.heroVisualWrapper}>
+            {/* Template Selector Pills */}
+            <div className={styles.heroTemplateSelector}>
+              {heroWebTemplates.map((tmpl, idx) => (
+                <button
+                  key={tmpl.id}
+                  type="button"
+                  onClick={() => setSelectedHeroTemplate(idx)}
+                  className={`${styles.templatePill} ${selectedHeroTemplate === idx ? styles.templatePillActive : ''}`}
+                >
+                  <span>{tmpl.badge}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Browser Frame Mockup with Real Webpage Screenshot */}
+            <div className={styles.heroBrowserFrame}>
+              {/* Floating Badge Top-Left */}
+              <div className={styles.floatingPillLeft}>
+                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>
+                  ⚡
+                </div>
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#ffffff' }}>AI Sentez Tamamlandı</div>
+                  <div style={{ fontSize: '11px', color: '#a5b4fc' }}>1.2 sn · Sıfır CSS Çakışması</div>
+                </div>
+              </div>
+
+              {/* Floating Badge Bottom-Right */}
+              <div className={styles.floatingPillRight}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, color: '#60a5fa' }}>
+                  <span>🎯 Lighthouse Skoru</span>
+                  <span style={{ color: '#34d399', fontWeight: 800 }}>100 / 100</span>
+                </div>
+                <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                  Tailwind + React 18 + W3C Uyumlu
+                </div>
+              </div>
+
+              {/* Floating Mobile Phone Mockup */}
+              <div className={styles.floatingMobileMockup} title="Mobil Uyumlu Görünüm">
+                <img
+                  src="/community-templates/mobile-flow.webp"
+                  alt="Mobil Web Tasarımı"
+                  loading="lazy"
+                />
+              </div>
+
+              {/* Browser Window Header */}
+              <div className={styles.browserTopBar}>
+                <div className={styles.browserDots}>
+                  <div className={`${styles.browserDot} ${styles.dotRed}`} />
+                  <div className={`${styles.browserDot} ${styles.dotYellow}`} />
+                  <div className={`${styles.browserDot} ${styles.dotGreen}`} />
+                </div>
+
+                <div className={styles.browserAddressBar}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  </svg>
+                  <span>{currentHeroTemplate.url}</span>
+                </div>
+
+                <div className={styles.browserLiveBadge}>
+                  <span className={styles.livePulseDot} />
+                  <span>Canlı Önizleme</span>
+                </div>
+              </div>
+
+              {/* Web Page Image Container */}
+              <div className={styles.heroImageContainer}>
+                <img
+                  key={currentHeroTemplate.id}
+                  src={currentHeroTemplate.image}
+                  alt={currentHeroTemplate.title}
+                  className={styles.heroWebImage}
+                />
+                <div className={styles.heroImageOverlay} />
+
+                <div className={styles.heroImageCaption}>
+                  <div className={styles.captionTitle}>
+                    {currentHeroTemplate.title}
+                  </div>
+                  <div className={styles.captionMeta}>
+                    {currentHeroTemplate.meta}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className={styles.heroStatsRow}>
