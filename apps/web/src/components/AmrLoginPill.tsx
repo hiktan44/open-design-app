@@ -622,7 +622,7 @@ export function AmrLoginPill({
         resolveAmrAuthTracking(analytics.track, 'failed', 'spawn_failed', {
           authAttemptId,
         });
-        console.error('[amr-login] startVelaLogin failed', result);
+        console.warn('[amr-login] startVelaLogin failed', result.error || result);
         loginStartedAtRef.current = null;
         loginPendingRef.current = false;
         setPending(null);
@@ -667,7 +667,7 @@ export function AmrLoginPill({
         ? await cancelVelaLogin(authAttemptId)
         : { ok: false, canceled: false };
       if (!result.ok) {
-        console.error('[amr-login] cancelVelaLogin failed', result);
+        console.warn('[amr-login] cancelVelaLogin failed', result);
         loginStartedAtRef.current = null;
         loginPendingRef.current = false;
         setPending(null);
@@ -737,7 +737,7 @@ export function AmrLoginPill({
     setPending(null);
     setConfirmingLogout(false);
     if (!result.ok) {
-      console.error('[amr-login] velaLogout failed', result);
+      console.warn('[amr-login] velaLogout failed', result);
       setErrorMessage(t('settings.amrLoginErrorCompact'));
       return;
     }

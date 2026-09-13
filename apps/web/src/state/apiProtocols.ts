@@ -21,9 +21,14 @@ import type { ApiProtocol } from '../types';
 // the user types in the model field is what's variable, not the API.
 export const SUGGESTED_MODELS_BY_PROTOCOL: Record<ApiProtocol, readonly string[]> = {
   anthropic: [
+    'claude-3-7-sonnet-20250219',
+    'claude-3-7-sonnet-latest',
+    'claude-3-5-sonnet-latest',
+    'claude-3-5-haiku-latest',
     'claude-opus-4-5',
     'claude-sonnet-4-5',
     'claude-haiku-4-5',
+    'deepseek-r1',
     'deepseek-chat',
     'deepseek-reasoner',
     'deepseek-v4-flash',
@@ -38,10 +43,16 @@ export const SUGGESTED_MODELS_BY_PROTOCOL: Record<ApiProtocol, readonly string[]
     'mimo-v2.5-pro',
   ],
   openai: [
+    'gpt-4.5-preview',
     'gpt-4o',
     'gpt-4o-mini',
+    'chatgpt-4o-latest',
+    'o1',
+    'o1-mini',
+    'o3-mini',
     'o3',
     'o4-mini',
+    'deepseek-r1',
     'deepseek-chat',
     'deepseek-reasoner',
     'deepseek-v4-flash',
@@ -56,27 +67,28 @@ export const SUGGESTED_MODELS_BY_PROTOCOL: Record<ApiProtocol, readonly string[]
     'mimo-v2.5-pro',
   ],
   azure: [
+    'gpt-4.5-preview',
     'gpt-4o',
     'gpt-4o-mini',
+    'o1',
+    'o3-mini',
   ],
   google: [
+    'gemini-2.5-pro',
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-lite',
+    'gemini-2.0-pro-exp-02-05',
     'gemini-3.5-flash',
     'gemini-3.1-pro-preview',
     'gemini-3-flash-preview',
     'gemini-3.1-flash-lite',
-    'gemini-2.5-pro',
-    'gemini-2.5-flash',
     'gemini-2.5-flash-lite',
   ],
   senseaudio: [
-    // SenseAudio is an OpenAI-compatible gateway that fronts both its own
-    // models (senseaudio-s2 family) and aggregator routes to deepseek /
-    // glm / kimi / minimax. Listing the headline house models first keeps
-    // the picker's default selection on a SenseAudio-native checkpoint;
-    // the aggregator IDs trail so users who arrived for a specific
-    // upstream still find it in this tab without retyping it.
     'senseaudio-s2',
     'senseaudio-s2-flash',
+    'deepseek-r1',
     'deepseek-v4-flash',
     'deepseek-v4-pro',
     'glm-5.1',
@@ -85,32 +97,46 @@ export const SUGGESTED_MODELS_BY_PROTOCOL: Record<ApiProtocol, readonly string[]
     'MiniMax-M2.7',
   ],
   aihubmix: [
-    // AIHubMix is an OpenAI-compatible aggregator that routes to OpenAI /
-    // Anthropic / Gemini / DeepSeek by model name on its side. Listing the
-    // headline cross-vendor checkpoints keeps the picker useful without
-    // pretending to enumerate the full catalogue — users can type any id
-    // AIHubMix exposes (or fetch the full live list). gpt-5.5 leads as the
-    // default chat model (an OpenAI-family model keeps in-chat generate_image
-    // working through the OpenAI tool loop after protocol routing lands).
-    'gpt-5.5',
+    'gpt-4.5-preview',
     'gpt-4o',
     'gpt-4o-mini',
+    'o1',
+    'o3-mini',
+    'claude-3-7-sonnet',
+    'claude-3-5-sonnet',
+    'claude-3-5-haiku',
     'claude-opus-4-8',
     'claude-sonnet-4-5',
     'claude-haiku-4-5',
+    'gemini-2.5-pro',
     'gemini-2.0-flash',
+    'deepseek-r1',
     'deepseek-chat',
     'deepseek-reasoner',
+    'gpt-5.5',
   ],
   bedrock: [
+    'anthropic.claude-3-7-sonnet-20250219-v1:0',
     'anthropic.claude-3-5-sonnet-20241022-v2:0',
     'anthropic.claude-3-5-haiku-20241022-v1:0',
     'anthropic.claude-3-haiku-20240307-v1:0',
     'amazon.nova-pro-v1:0',
     'amazon.nova-lite-v1:0',
     'amazon.nova-micro-v1:0',
+    'deepseek.r1-v1:0',
   ],
   ollama: [
+    'qwen2.5-coder:32b',
+    'qwen2.5-coder:14b',
+    'qwen2.5-coder:7b',
+    'deepseek-r1:70b',
+    'deepseek-r1:32b',
+    'deepseek-r1:14b',
+    'deepseek-r1:8b',
+    'llama3.3:70b',
+    'llama3.2:3b',
+    'phi4:14b',
+    'mistral-small:24b',
     'cogito-2.1:671b',
     'deepseek-v3.1:671b',
     'deepseek-v3.2',
