@@ -32,6 +32,7 @@ const ICON_EXT: Record<string, 'svg' | 'png'> = {
   kilo: 'svg',
   vibe: 'svg',
   antigravity: 'svg',
+  ollama: 'svg',
   aider: 'png',
   'trae-cli': 'png',
   devin: 'png',
@@ -58,6 +59,7 @@ const MONO_ICONS = new Set([
   'mimo',
   'kilo',
   'grok-build',
+  'ollama',
 ]);
 
 export function AgentIcon({ id, size = 36, className }: Props) {

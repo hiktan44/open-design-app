@@ -871,6 +871,7 @@ const AGENT_SHORT_DESCRIPTIONS: Record<string, string> = {
   hermes: 'ACP agent CLI',
   'grok-build': 'xAI coding CLI',
   reasonix: 'DeepSeek native coding CLI',
+  ollama: 'Local LLM runner (http://localhost:11434)',
 };
 
 function cleanAgentVersionLabel(
