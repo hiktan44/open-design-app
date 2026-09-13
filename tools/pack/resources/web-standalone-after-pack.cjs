@@ -106,10 +106,12 @@ async function readHookConfig() {
 
   return {
     auditReportPath,
+    hyperframesRuntimeSourceRoot: requireAbsolutePath(raw, "hyperframesRuntimeSourceRoot"),
     macAdhocBundleSign: optionalBoolean(raw, "macAdhocBundleSign", false),
     pruneCopiedSharp: requireBoolean(raw, "pruneCopiedSharp"),
     pruneRootNext: requireBoolean(raw, "pruneRootNext"),
     pruneRootSharp: requireBoolean(raw, "pruneRootSharp"),
+    requireRootWebPackageAudit: optionalBoolean(raw, "requireRootWebPackageAudit", true),
     resourceName,
     standaloneSourceRoot,
     webPublicSourceRoot,
@@ -182,16 +184,20 @@ async function copyOptional(sourcePath, destinationPath, options = {}) {
   return true;
 }
 
-async function linkRelative(sourcePath, destinationPath) {
+async function linkRelative(sourcePath, destinationPath, options = {}) {
   if (!(await pathExists(sourcePath))) return false;
   if (await pathLstatExists(destinationPath)) return false;
   await mkdir(path.dirname(destinationPath), { recursive: true });
+  if (options.copyInsteadOfSymlink === true) {
+    await copyRequired(sourcePath, destinationPath, { dereference: true });
+    return true;
+  }
   const relativeTarget = path.relative(path.dirname(destinationPath), sourcePath);
   await symlink(relativeTarget.length === 0 ? "." : relativeTarget, destinationPath);
   return true;
 }
 
-async function linkPnpmPublicHoist(destinationRoot) {
+async function linkPnpmPublicHoist(destinationRoot, options = {}) {
   const nodeModulesRoot = path.join(destinationRoot, "node_modules");
   const hoistRoot = path.join(nodeModulesRoot, ".pnpm", "node_modules");
   const entries = await readdir(hoistRoot, { withFileTypes: true }).catch(() => []);
@@ -204,13 +210,13 @@ async function linkPnpmPublicHoist(destinationRoot) {
       for (const scopedEntry of scopedEntries) {
         const scopedSource = path.join(sourcePath, scopedEntry);
         const scopedDestination = path.join(nodeModulesRoot, entry.name, scopedEntry);
-        if (await linkRelative(scopedSource, scopedDestination)) linked.push(scopedDestination);
+        if (await linkRelative(scopedSource, scopedDestination, options)) linked.push(scopedDestination);
       }
       continue;
     }
 
     const destinationPath = path.join(nodeModulesRoot, entry.name);
-    if (await linkRelative(sourcePath, destinationPath)) linked.push(destinationPath);
+    if (await linkRelative(sourcePath, destinationPath, options)) linked.push(destinationPath);
   }
 
   return linked;
@@ -242,7 +248,7 @@ async function installStandaloneResource(config, resourcesRoot, platformName) {
   await copyRequired(path.join(sourceWebRoot, "server.js"), path.join(destinationWebRoot, "server.js"));
   await copyOptional(path.join(sourceWebRoot, "package.json"), path.join(destinationWebRoot, "package.json"));
   const copiedNestedNodeModules = await copyOptional(path.join(sourceWebRoot, "node_modules"), path.join(destinationWebRoot, "node_modules"), copyOptions);
-  const linkedHoistEntries = await linkPnpmPublicHoist(destinationRoot);
+  const linkedHoistEntries = await linkPnpmPublicHoist(destinationRoot, { copyInsteadOfSymlink: platformName === "win32" });
   await copyRequired(path.join(sourceWebRoot, ".next"), path.join(destinationWebRoot, ".next"));
   const copiedStatic = await copyOptional(config.webStaticSourceRoot, path.join(destinationWebRoot, ".next", "static"));
   const copiedPublic = await copyOptional(config.webPublicSourceRoot, path.join(destinationWebRoot, "public"));
@@ -552,6 +558,73 @@ function isMacCodeBundle(name) {
   return name.endsWith(".app") || name.endsWith(".framework");
 }
 
+async function ensureRelativeSymlink(linkPath, targetPath, type) {
+  if (await pathLstatExists(linkPath)) {
+    const metadata = await lstat(linkPath);
+    if (metadata.isSymbolicLink()) {
+      const existingTarget = await readlink(linkPath);
+      if (existingTarget === targetPath) return false;
+    }
+    await rm(linkPath, { force: true, recursive: true });
+  }
+
+  await symlink(targetPath, linkPath, type);
+  return true;
+}
+
+async function normalizeMacVersionedFramework(frameworkPath) {
+  const versionsRoot = path.join(frameworkPath, "Versions");
+  const entries = await readdir(versionsRoot, { withFileTypes: true }).catch(() => []);
+  const versionName = entries
+    .filter((entry) => entry.isDirectory() && entry.name !== "Current")
+    .map((entry) => entry.name)
+    .sort()[0];
+  if (versionName == null) return false;
+
+  const versionPath = path.join(versionsRoot, versionName);
+  await ensureRelativeSymlink(path.join(versionsRoot, "Current"), versionName, "dir");
+
+  const versionEntries = await readdir(versionPath, { withFileTypes: true }).catch(() => []);
+  let changed = false;
+  for (const entry of versionEntries) {
+    if (entry.name === "_CodeSignature") continue;
+    const targetPath = `Versions/Current/${entry.name}`;
+    const linkPath = path.join(frameworkPath, entry.name);
+    const type = entry.isDirectory() ? "dir" : "file";
+    changed = (await ensureRelativeSymlink(linkPath, targetPath, type)) || changed;
+  }
+
+  return changed;
+}
+
+async function normalizeMacVersionedFrameworks(appPath) {
+  const frameworksRoot = path.join(appPath, "Contents", "Frameworks");
+
+  async function visit(current) {
+    const entries = await readdir(current, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const entryPath = path.join(current, entry.name);
+      if (entry.name.endsWith(".framework")) {
+        await normalizeMacVersionedFramework(entryPath);
+        continue;
+      }
+      await visit(entryPath);
+    }
+  }
+
+  await visit(frameworksRoot);
+}
+
+async function resolveMacAdhocSignTarget(bundlePath, bundleName) {
+  if (!bundleName.endsWith(".framework")) return bundlePath;
+
+  const currentVersionPath = path.join(bundlePath, "Versions", "Current");
+  if (await pathExists(currentVersionPath)) return currentVersionPath;
+
+  return bundlePath;
+}
+
 async function collectMacAdhocSignTargets(appPath) {
   const frameworksRoot = path.join(appPath, "Contents", "Frameworks");
   const targets = [];
@@ -562,7 +635,7 @@ async function collectMacAdhocSignTargets(appPath) {
       if (!entry.isDirectory()) continue;
       const entryPath = path.join(current, entry.name);
       if (isMacCodeBundle(entry.name)) {
-        targets.push(entryPath);
+        targets.push(await resolveMacAdhocSignTarget(entryPath, entry.name));
         continue;
       }
       await visit(entryPath);
@@ -575,9 +648,10 @@ async function collectMacAdhocSignTargets(appPath) {
 }
 
 async function signMacAdhocBundle(appPath) {
+  await normalizeMacVersionedFrameworks(appPath);
   const targets = await collectMacAdhocSignTargets(appPath);
   for (const target of targets) {
-    await execFileAsync("codesign", ["--force", "--sign", "-", "--timestamp=none", target], {
+    await execFileAsync("codesign", ["--force", "--deep", "--sign", "-", "--timestamp=none", target], {
       maxBuffer: 20 * 1024 * 1024,
     });
   }
@@ -756,6 +830,88 @@ async function pruneRootSharp(appNodeModulesRoot) {
   return removedPaths;
 }
 
+function resolveHyperframesRuntimePackageNames(platformName) {
+  const arch = platformName === "win32" ? "x64" : process.arch;
+  if (arch !== "arm64" && arch !== "x64") {
+    throw new Error(`[tools-pack hyperframes] unsupported ${platformName} architecture: ${arch}`);
+  }
+  if (platformName === "win32") {
+    return [
+      "sharp",
+      "@img/colour",
+      `@img/sharp-win32-${arch}`,
+    ];
+  }
+  if (platformName === "darwin") {
+    return [
+      "sharp",
+      "@img/colour",
+      `@img/sharp-darwin-${arch}`,
+      `@img/sharp-libvips-darwin-${arch}`,
+    ];
+  }
+  throw new Error(`[tools-pack hyperframes] unsupported platform: ${platformName}`);
+}
+
+function packagePath(nodeModulesRoot, packageName) {
+  return path.join(nodeModulesRoot, ...packageName.split("/"));
+}
+
+async function copyHyperframesRuntimeDependencies(config, appNodeModulesRoot, platformName) {
+  const sourceNodeModulesRoot = path.join(config.hyperframesRuntimeSourceRoot, "node_modules");
+  const copied = [];
+  for (const packageName of resolveHyperframesRuntimePackageNames(platformName)) {
+    const sourcePath = packagePath(sourceNodeModulesRoot, packageName);
+    const destinationPath = packagePath(appNodeModulesRoot, packageName);
+    await copyRequired(sourcePath, destinationPath, { dereference: true });
+    copied.push({
+      bytes: await sizePathBytes(destinationPath),
+      destinationPath,
+      packageName,
+      sourcePath,
+    });
+  }
+  return copied;
+}
+
+async function smokeHyperframesCli(
+  appPath,
+  appNodeModulesRoot,
+  platformName,
+  productFilename,
+  copiedPackages,
+) {
+  const cliPath = path.join(appNodeModulesRoot, "hyperframes", "dist", "cli.js");
+  const nodePath = platformName === "win32"
+    ? path.join(appPath, `${productFilename}.exe`)
+    : path.join(appPath, "Contents", "MacOS", productFilename);
+  const requiredPaths = [
+    cliPath,
+    nodePath,
+    ...copiedPackages.map((entry) => path.join(entry.destinationPath, "package.json")),
+  ];
+  for (const requiredPath of requiredPaths) {
+    if (!(await pathExists(requiredPath))) {
+      throw new Error(`[tools-pack hyperframes] final packaged runtime is missing: ${requiredPath}`);
+    }
+  }
+
+  const env = { ...process.env, ELECTRON_RUN_AS_NODE: "1", NODE_PATH: "" };
+  delete env.NODE_OPTIONS;
+  const result = await execFileAsync(nodePath, [cliPath, "--version"], {
+    cwd: appPath,
+    env,
+    maxBuffer: 20 * 1024 * 1024,
+    timeout: 30_000,
+  });
+  return {
+    cliPath,
+    nodePath,
+    stderr: result.stderr.trim(),
+    stdout: result.stdout.trim(),
+  };
+}
+
 async function pruneRootWebPackage(appNodeModulesRoot, platformName) {
   if (platformName !== "win32") return [];
 
@@ -801,7 +957,9 @@ async function auditNoBrokenSymlinks(root, label) {
 }
 
 async function runWebStandaloneAfterPack(context) {
-  if (context?.electronPlatformName != null && context.electronPlatformName !== "darwin" && context.electronPlatformName !== "win32") return;
+  if (context?.electronPlatformName !== "darwin" && context?.electronPlatformName !== "win32") {
+    throw new Error(`[tools-pack web-standalone] unsupported platform: ${context?.electronPlatformName ?? "unknown"}`);
+  }
 
   const config = await readHookConfig();
   const appPath = resolveAppPath(context);
@@ -837,11 +995,16 @@ async function runWebStandaloneAfterPack(context) {
   const copiedAudit = await auditCopiedStandalone(config, installResult, context.electronPlatformName);
   const rootPrune = config.pruneRootNext ? await pruneRootNext(appNodeModulesRoot, context.electronPlatformName) : [];
   const rootSharpPrune = config.pruneRootSharp ? await pruneRootSharp(appNodeModulesRoot) : [];
+  const hyperframesRuntimeCopies = await copyHyperframesRuntimeDependencies(
+    config,
+    appNodeModulesRoot,
+    context.electronPlatformName,
+  );
   const rootWebPackagePrune = await pruneRootWebPackage(appNodeModulesRoot, context.electronPlatformName);
   const rootBuildResiduePrune = context.electronPlatformName === "win32"
     ? await pruneSourceBuildResidue(appNodeModulesRoot, "root app source/build residue")
     : [];
-  const rootWebPackageAudit = context.electronPlatformName === "win32"
+  const rootWebPackageAudit = context.electronPlatformName === "win32" && config.requireRootWebPackageAudit
     ? await auditRootWebPackage(appNodeModulesRoot)
     : null;
   const rootNextPruneAudit = await auditRootNextPruned(
@@ -859,6 +1022,13 @@ async function runWebStandaloneAfterPack(context) {
     appNodeModulesRoot,
     "root app node_modules",
   );
+  const hyperframesCliSmoke = await smokeHyperframesCli(
+    appPath,
+    appNodeModulesRoot,
+    context.electronPlatformName,
+    context.packager.appInfo.productFilename,
+    hyperframesRuntimeCopies,
+  );
   const macAdhocBundleSign = context.electronPlatformName === "darwin" && config.macAdhocBundleSign
     ? await signMacAdhocBundle(appPath)
     : [];
@@ -871,6 +1041,8 @@ async function runWebStandaloneAfterPack(context) {
     copiedNextDedupeAudit,
     copiedPrune,
     generatedAt: new Date().toISOString(),
+    hyperframesCliSmoke,
+    hyperframesRuntimeCopies,
     macAdhocBundleSign,
     platformName: context.electronPlatformName,
     resourcesRoot,

@@ -73,28 +73,42 @@ export function defaultCritiqueConfig(): CritiqueConfig {
   };
 }
 
-export type DegradedReason =
-  | 'malformed_block'
-  | 'oversize_block'
-  | 'adapter_unsupported'
-  | 'protocol_version_mismatch'
-  | 'missing_artifact';
+export const DEGRADED_REASONS = [
+  'malformed_block',
+  'oversize_block',
+  'adapter_unsupported',
+  'protocol_version_mismatch',
+  'missing_artifact',
+] as const;
+export type DegradedReason = typeof DEGRADED_REASONS[number];
 
-export type FailedCause =
-  | 'cli_exit_nonzero'
-  | 'per_round_timeout'
-  | 'total_timeout'
-  | 'orchestrator_internal';
+export const FAILED_CAUSES = [
+  'cli_exit_nonzero',
+  'per_round_timeout',
+  'total_timeout',
+  'orchestrator_internal',
+] as const;
+export type FailedCause = typeof FAILED_CAUSES[number];
 
-export type ParserWarningKind =
-  | 'weak_debate'
-  | 'unknown_role'
-  | 'score_clamped'
-  | 'composite_mismatch'
-  | 'duplicate_ship';
+export const PARSER_WARNING_KINDS = [
+  'weak_debate',
+  'unknown_role',
+  'score_clamped',
+  'composite_mismatch',
+  'duplicate_ship',
+] as const;
+export type ParserWarningKind = typeof PARSER_WARNING_KINDS[number];
 
-export type RoundDecision = 'continue' | 'ship';
-export type ShipStatus = 'shipped' | 'below_threshold' | 'timed_out' | 'interrupted';
+export const ROUND_DECISIONS = ['continue', 'ship'] as const;
+export type RoundDecision = typeof ROUND_DECISIONS[number];
+
+export const SHIP_STATUSES = [
+  'shipped',
+  'below_threshold',
+  'timed_out',
+  'interrupted',
+] as const;
+export type ShipStatus = typeof SHIP_STATUSES[number];
 
 export type PanelEvent =
   | { type: 'run_started'; runId: string; protocolVersion: number; cast: PanelistRole[]; maxRounds: number; threshold: number; scale: number }
@@ -117,12 +131,129 @@ const PANEL_EVENT_TYPE_LIST = [
 
 const PANEL_EVENT_TYPES = new Set<PanelEvent['type']>(PANEL_EVENT_TYPE_LIST);
 
+const PANELIST_ROLE_SET = new Set<string>(PANELIST_ROLES);
+const SHIP_STATUS_SET = new Set<string>(SHIP_STATUSES);
+const DEGRADED_REASON_SET = new Set<string>(DEGRADED_REASONS);
+const FAILED_CAUSE_SET = new Set<string>(FAILED_CAUSES);
+const PARSER_WARNING_KIND_SET = new Set<string>(PARSER_WARNING_KINDS);
+const ROUND_DECISION_SET = new Set<string>(ROUND_DECISIONS);
+
+const isFiniteNumber = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isFinite(v);
+/** Non-negative finite (>= 0). Used for composite / score / dimScore. */
+const isNonNegativeFinite = (v: unknown): v is number =>
+  isFiniteNumber(v) && v >= 0;
+/** Non-negative integer (0, 1, 2, ...). Used for mustFix, position, bestRound. */
+const isNonNegativeInt = (v: unknown): v is number =>
+  isFiniteNumber(v) && Number.isInteger(v) && v >= 0;
+/** Positive integer (1, 2, ...). Used for round, maxRounds, protocolVersion, scale. */
+const isPositiveInt = (v: unknown): v is number =>
+  isFiniteNumber(v) && Number.isInteger(v) && v > 0;
+const isString = (v: unknown): v is string => typeof v === 'string';
+const isPanelistRole = (v: unknown): v is PanelistRole =>
+  isString(v) && PANELIST_ROLE_SET.has(v);
+
+/**
+ * Strict runtime guard for the `PanelEvent` union. Validates the union tag
+ * (`type`), the non-empty `runId` header, every variant-specific required
+ * field, the membership of closed-enum fields (`role`, `status`, `reason`,
+ * `cause`, `kind`, `decision`), and the numeric domain of every numeric
+ * field (integer / positive / non-negative / range), not just finiteness.
+ *
+ * This is the single source of truth for wire-side validation. Both the web
+ * SSE path (`sseToPanelEvent`) and the transcript replay parser go through
+ * here, so a malformed frame (missing field, unknown enum value, NaN /
+ * Infinity score, `scale: 0` causing downstream divide-by-zero, threshold
+ * outside `[0, scale]`, fractional or negative round numbers) is rejected
+ * before any reducer or component touches it.
+ *
+ * Numeric domains enforced (lefarcen P2 on PR #1314 round 4):
+ *
+ *   - `protocolVersion`, `maxRounds`, `scale`, `round`: positive integers.
+ *     ScoreTicker divides by `scale` for inline CSS, so a `scale: 0` would
+ *     produce Infinity and ship as broken style; rounds are 1-indexed.
+ *   - `bestRound`, `mustFix`, `position`: non-negative integers. `bestRound:
+ *     0` is the valid "interrupt before any round closed" sentinel.
+ *   - `threshold`: non-negative finite; cross-checked `threshold <= scale`
+ *     inside `run_started`. Threshold is allowed to be fractional (e.g.
+ *     8.5 on a scale of 10).
+ *   - `composite`, `score`, `dimScore`: non-negative finite. The
+ *     `<= scale` bound is per-run state the guard does not see; downstream
+ *     code clamps to scale on render, but a negative score is never valid.
+ *
+ * Earlier review history:
+ *
+ *   - Siri-Ray round-3 P1: the original guard checked `typeof === 'string'`
+ *     for enum fields and accepted unknown values; now validated against
+ *     the closed-set arrays.
+ */
 export function isPanelEvent(value: unknown): value is PanelEvent {
   if (!value || typeof value !== 'object') return false;
-  const obj = value as Record<string, unknown>;
-  const t = obj['type'];
+  const o = value as Record<string, unknown>;
+  const t = o['type'];
   if (typeof t !== 'string' || !PANEL_EVENT_TYPES.has(t as PanelEvent['type'])) return false;
-  return typeof obj['runId'] === 'string' && (obj['runId'] as string).length > 0;
+  const runId = o['runId'];
+  if (typeof runId !== 'string' || runId.length === 0) return false;
+  switch (t as PanelEvent['type']) {
+    case 'run_started': {
+      const threshold = o['threshold'];
+      const scale = o['scale'];
+      return isPositiveInt(o['protocolVersion'])
+        && Array.isArray(o['cast']) && o['cast'].length > 0
+        && (o['cast'] as unknown[]).every(isPanelistRole)
+        && isPositiveInt(o['maxRounds'])
+        && isPositiveInt(scale)
+        && isNonNegativeFinite(threshold)
+        // threshold must fit within the configured scale; downstream
+        // panel decisions compare composite against threshold and break
+        // silently if threshold > scale.
+        && (threshold as number) <= (scale as number);
+    }
+    case 'panelist_open':
+      return isPositiveInt(o['round']) && isPanelistRole(o['role']);
+    case 'panelist_dim':
+      return isPositiveInt(o['round'])
+        && isPanelistRole(o['role'])
+        && isString(o['dimName'])
+        && isNonNegativeFinite(o['dimScore'])
+        && isString(o['dimNote']);
+    case 'panelist_must_fix':
+      return isPositiveInt(o['round'])
+        && isPanelistRole(o['role'])
+        && isString(o['text']);
+    case 'panelist_close':
+      return isPositiveInt(o['round'])
+        && isPanelistRole(o['role'])
+        && isNonNegativeFinite(o['score']);
+    case 'round_end':
+      return isPositiveInt(o['round'])
+        && isNonNegativeFinite(o['composite'])
+        && isNonNegativeInt(o['mustFix'])
+        && isString(o['decision']) && ROUND_DECISION_SET.has(o['decision'])
+        && isString(o['reason']);
+    case 'ship': {
+      const ref = o['artifactRef'] as { projectId?: unknown; artifactId?: unknown } | null | undefined;
+      return isPositiveInt(o['round'])
+        && isNonNegativeFinite(o['composite'])
+        && isString(o['status']) && SHIP_STATUS_SET.has(o['status'])
+        && ref !== null && typeof ref === 'object'
+        && typeof ref.projectId === 'string' && ref.projectId.length > 0
+        && typeof ref.artifactId === 'string' && ref.artifactId.length > 0
+        && isString(o['summary']);
+    }
+    case 'degraded':
+      return isString(o['reason']) && DEGRADED_REASON_SET.has(o['reason'])
+        && isString(o['adapter']);
+    case 'interrupted':
+      // `bestRound: 0` is the valid sentinel for "interrupted before any
+      // round closed"; rounds otherwise start at 1.
+      return isNonNegativeInt(o['bestRound']) && isNonNegativeFinite(o['composite']);
+    case 'failed':
+      return isString(o['cause']) && FAILED_CAUSE_SET.has(o['cause']);
+    case 'parser_warning':
+      return isString(o['kind']) && PARSER_WARNING_KIND_SET.has(o['kind'])
+        && isNonNegativeInt(o['position']);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -172,4 +303,166 @@ export function panelEventToSse(e: PanelEvent): CritiqueSseEvent {
   // prefixing the type with 'critique.' and moving every other field into
   // data. The cast is safe by construction.
   return { event: `critique.${type}`, data: payload } as CritiqueSseEvent;
+}
+
+/**
+ * Per-round summary persisted with each critique run. Mirrors the shape the
+ * orchestrator writes via decideRound; web clients consume it through the
+ * rerun and history endpoints, so it lives in the shared contract layer.
+ */
+export interface CritiqueRoundSummary {
+  n: number;
+  composite: number;
+  mustFix: number;
+  decision: RoundDecision;
+}
+
+/**
+ * Terminal critique status persisted with each run. Superset of ShipStatus
+ * that also covers degraded / failed / legacy outcomes. The daemon's CHECK
+ * constraint also accepts the in-flight 'running' value, but that is handled
+ * inline by daemon-side code; the public contract surface is terminal-only
+ * because every consumer of this type works against finished runs.
+ */
+export type CritiqueRunStatus =
+  | ShipStatus
+  | 'degraded'
+  | 'failed'
+  | 'legacy';
+
+/**
+ * Enumeration of every terminal CritiqueRunStatus value, in the order the
+ * UI / docs / status filters typically display them: SHIP outcomes first
+ * (shipped → below_threshold → timed_out → interrupted), then quality /
+ * lifecycle exits (degraded → failed), then the historical 'legacy' tag
+ * for runs created before the feature shipped. Web consumers (status
+ * filters, analytics dashboards) iterate this constant directly so the
+ * daemon stays the single source of truth on the order.
+ */
+export const CRITIQUE_RUN_STATUSES = [
+  'shipped',
+  'below_threshold',
+  'timed_out',
+  'interrupted',
+  'degraded',
+  'failed',
+  'legacy',
+] as const satisfies readonly CritiqueRunStatus[];
+
+/**
+ * Compile-time guarantee that every `CritiqueRunStatus` variant appears in
+ * `CRITIQUE_RUN_STATUSES`. `satisfies` only proves each listed value is
+ * valid; this assertion proves the list is exhaustive, so adding a new
+ * variant to `CritiqueRunStatus` (or `ShipStatus`) without updating the
+ * array fails the build with a tuple naming the missing variants. Picked
+ * up from lefarcen P3 on PR #1016. The exported helper type is reusable
+ * by other shared enums (e.g. `PANELIST_ROLES`) once they need the same
+ * guard.
+ */
+export type AssertExhaustiveValues<T extends string, U extends readonly T[]> =
+  Exclude<T, U[number]> extends never
+    ? true
+    : ['Missing variants in array:', Exclude<T, U[number]>];
+
+const _critiqueRunStatusesExhaustive: AssertExhaustiveValues<
+  CritiqueRunStatus,
+  typeof CRITIQUE_RUN_STATUSES
+> = true;
+// Reference the binding so esbuild does not tree-shake it; the assignment
+// itself is what enforces the exhaustiveness guarantee at compile time.
+void _critiqueRunStatusesExhaustive;
+
+/**
+ * Internal-to-the-daemon row status. Adds the in-flight `'running'` value
+ * the DB CHECK constraint accepts to the public `CritiqueRunStatus` union
+ * so DB-row types can be precisely typed without inline `as X | 'running'`
+ * widens at every call site. Every public DTO continues to use the
+ * terminal-only `CritiqueRunStatus` so a future endpoint cannot leak a
+ * 'running' row through the wire. Picked up from lefarcen P2 on PR #1016.
+ */
+export type CritiquePersistedStatus = CritiqueRunStatus | 'running';
+
+/**
+ * Logical handle the daemon hands to the web layer for a critique run's
+ * shipped artifact. Web clients never see daemon filesystem paths; they
+ * fetch the artifact bytes via the `url` field, which the daemon serves
+ * with the right `Content-Type` header derived from `mime`. Returned by
+ * the rerun endpoint and the `GET /api/projects/:projectId/critique/:runId/artifact`
+ * route that streams the bytes.
+ */
+export interface CritiqueArtifactRef {
+  /** The owning project; matches the URL segment. */
+  projectId: string;
+  /** The owning critique run; matches the URL segment. */
+  runId: string;
+  /** Content-Type announced by the agent in `<ARTIFACT mime="…">`. */
+  mime: string;
+  /** Size of the artifact body in bytes, as written to disk. */
+  sizeBytes: number;
+  /** Daemon-relative HTTP path the web layer fetches to stream the bytes. */
+  url: string;
+}
+
+/* ── 评审剧场通信语法:唯一出处 ─────────────────────────────────────────────
+ *
+ * 剧场本身已经在总闸上关掉了(`apps/daemon/src/critique/rollout.ts`),这一段留的是
+ * **兜底**:凡是这套语法,一律不进聊天正文。用户在真实客户端里连着撞到四次
+ * `<CRITIQUE_RUN>` / `<PANELIST role="Critic" score="9.0">` 原样打在回答里。
+ *
+ * 语法只能有一个出处 —— daemon 用它剥**流**(带半截缓冲),web 用它剥**历史**
+ * (已经落库的旧对话,daemon 那道来不及了)。两边分头写早晚会分叉。
+ */
+
+/**
+ * 成对出现、要**脱壳留字**的标记 —— 里面那句话是人写给人看的。
+ *
+ * 标签名以**真实语法**为准,不凭印象写:prompt 在
+ * `apps/daemon/src/prompts/panel.ts`,解析器在
+ * `apps/daemon/src/critique/parsers/v1.ts`(`MUST_FIX_RE`),fixtures 在
+ * `apps/daemon/src/critique/__fixtures__/`。三处一致才算数。
+ *
+ * 这里曾经写成 `MUSTFIX`(漏了下划线)。那个拼法在真实数据里一次都没出现过,
+ * 于是它挡不住任何东西:同一段话里的 `<PANELIST>` 被剥掉了,
+ * `<MUST_FIX id="…">…</MUST_FIX>` 却整条留在正文里给用户看见。
+ * 更难认的是它长什么样 —— markdown 把 `MUST_FIX` 里那对下划线当成强调标记,
+ * 屏幕上显示的是**斜体的 `MUSTFIX`**,下划线已经被吃掉,
+ * 照着屏幕回头找代码只会找到这个错的拼法,正好自圆其说。
+ */
+export const CRITIQUE_INLINE_TAGS = ['PANELIST', 'MUST_FIX', 'RESOLVED', 'SHIP'] as const;
+/** 整条都是协议的标记 */
+export const CRITIQUE_BLOCK_TAGS = ['CRITIQUE_RUN', 'ROUND', 'ROUND_END'] as const;
+export const CRITIQUE_GRAMMAR_TAGS: readonly string[] = [
+  ...CRITIQUE_INLINE_TAGS,
+  ...CRITIQUE_BLOCK_TAGS,
+];
+
+/**
+ * 一条完整标记:`<TAG …>` / `</TAG>` / `<TAG …/>`。
+ * 标签名后面必须紧跟空白、`>` 或 `/`,否则 `<PANELISTS>` 这种会被误吃。
+ *
+ * 每次现造一个,不共享 —— 带 `g` 的正则有 `lastIndex` 状态,共享实例会让
+ * 相邻两次调用互相干扰(第二次从上一次停下的位置开始找)。
+ */
+export function critiqueGrammarTagPattern(): RegExp {
+  return new RegExp(`</?(?:${CRITIQUE_GRAMMAR_TAGS.join('|')})(?=[\\s/>])[^>]*>`, 'g');
+}
+
+/**
+ * 把一整段**已经完整**的文本里的剧场语法剥掉(给历史消息用)。
+ *
+ * 只摘标记、不吞标记之间的字:`<PANELIST role="Designer">已完成…</PANELIST>`
+ * 剩下「已完成…」。宁可多留一句人话,也不要把用户的正文吃掉。
+ *
+ * **不避开代码块**,和 daemon 那道流式剥离保持同一口径:那边按 SSE 分片处理,
+ * 根本不知道自己在不在围栏里。两边口径必须一致,否则同一段文字在
+ * 「刚生成」和「刷新后」会长得不一样。真要在正文里展示这套标记,用转义。
+ *
+ * 连续标记之间只剩空行时会塌成一个换行 —— 否则剥完会留下一大片空白,
+ * 读着像回答中间断了一截。
+ */
+export function stripCritiqueGrammar(text: string): string {
+  if (!text || !text.includes('<')) return text;
+  const withoutTags = text.replace(critiqueGrammarTagPattern(), '');
+  if (withoutTags === text) return text;
+  return withoutTags.replace(/\n{3,}/g, '\n\n');
 }

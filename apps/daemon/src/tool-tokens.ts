@@ -1,6 +1,24 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 export const DEFAULT_TOOL_TOKEN_TTL_MS = 15 * 60 * 1000;
+export const CHAT_TOOL_TOKEN_TTL_BUFFER_MS = 15 * 60 * 1000;
+
+export function resolveChatToolTokenTtlMs(inactivityTimeoutMs: number): number {
+  if (!Number.isFinite(inactivityTimeoutMs) || inactivityTimeoutMs < 0) {
+    throw new RangeError(`inactivityTimeoutMs must be a non-negative finite number, got ${String(inactivityTimeoutMs)}`);
+  }
+  return Math.max(
+    DEFAULT_TOOL_TOKEN_TTL_MS,
+    inactivityTimeoutMs + CHAT_TOOL_TOKEN_TTL_BUFFER_MS,
+  );
+}
+
+// Capability key for the parameterized media wait route. Token grants cannot
+// enumerate a task id that is created after the grant is minted.
+export const MEDIA_TASK_WAIT_TOOL_ENDPOINT = '/api/media/tasks/:id/wait';
+export const HYPERFRAMES_SCAFFOLD_TOOL_ENDPOINT = '/api/tools/media/hyperframes/scaffold';
+export const PROJECT_EXPORT_TOOL_ENDPOINT = '/api/projects/:id/export/:format';
+export const DELIVERABLE_SYNTAX_CHECK_TOOL_ENDPOINT = '/api/tools/deliverable-syntax/check';
 
 export const CHAT_TOOL_ENDPOINTS = [
   '/api/tools/live-artifacts/create',
@@ -9,6 +27,14 @@ export const CHAT_TOOL_ENDPOINTS = [
   '/api/tools/live-artifacts/update',
   '/api/tools/connectors/list',
   '/api/tools/connectors/execute',
+  '/api/tools/design-systems/read',
+  '/api/tools/media/generate',
+  HYPERFRAMES_SCAFFOLD_TOOL_ENDPOINT,
+  DELIVERABLE_SYNTAX_CHECK_TOOL_ENDPOINT,
+  MEDIA_TASK_WAIT_TOOL_ENDPOINT,
+  PROJECT_EXPORT_TOOL_ENDPOINT,
+  '/api/tools/library/search',
+  '/api/tools/library/apply',
 ] as const;
 
 export const CHAT_TOOL_OPERATIONS = [
@@ -18,6 +44,13 @@ export const CHAT_TOOL_OPERATIONS = [
   'live-artifacts:update',
   'connectors:list',
   'connectors:execute',
+  'design-systems:read',
+  'media:generate',
+  'media:scaffold',
+  'deliverable-syntax:check',
+  'project:export',
+  'library:search',
+  'library:apply',
 ] as const;
 
 export type ToolEndpoint = (typeof CHAT_TOOL_ENDPOINTS)[number] | (string & {});
@@ -38,6 +71,15 @@ export interface ToolTokenGrant {
   allowedOperations: readonly ToolOperation[];
   issuedAt: string;
   expiresAt: string;
+  // Plan §3.A3 / spec §9. When the run is plugin-driven, the snapshot id
+  // and the cached trust tier ride alongside the token so
+  // `/api/tools/connectors/execute` can re-validate per-call without
+  // re-reading the SQLite row. `pluginSnapshotId` undefined means the
+  // run is not plugin-driven; the connector gate is bypassed (legacy
+  // behavior).
+  pluginSnapshotId?: string;
+  pluginTrust?: 'trusted' | 'restricted' | 'bundled';
+  pluginCapabilitiesGranted?: readonly string[];
 }
 
 export interface MintToolTokenOptions {
@@ -45,6 +87,14 @@ export interface MintToolTokenOptions {
   projectId: string;
   allowedEndpoints?: readonly ToolEndpoint[];
   allowedOperations?: readonly ToolOperation[];
+  ttlMs?: number;
+  nowMs?: number;
+  pluginSnapshotId?: string;
+  pluginTrust?: 'trusted' | 'restricted' | 'bundled';
+  pluginCapabilitiesGranted?: readonly string[];
+}
+
+export interface RefreshToolTokenOptions {
   ttlMs?: number;
   nowMs?: number;
 }
@@ -70,6 +120,35 @@ function createOpaqueToolToken(): string {
 function asPublicGrant(stored: StoredToolTokenGrant): ToolTokenGrant {
   const { tokenHash: _tokenHash, expiresAtMs: _expiresAtMs, timer: _timer, ...grant } = stored;
   return grant;
+}
+
+// Plan §3.A3 / spec §9: pure connector capability gate over a token grant.
+// When the grant carries no plugin snapshot id, the call is from a
+// non-plugin run and we let it through (back-compat). When the grant
+// carries a snapshot id, we apply the §9 / §5.3 rule:
+//
+//   - trusted / bundled plugins implicitly carry connector:* — accept.
+//   - restricted plugins must list `connector:<id>` in
+//     pluginCapabilitiesGranted — otherwise reject with TOOL_OPERATION_DENIED.
+//
+// Used by `/api/tools/connectors/execute` (defense in depth, c). Phase 4
+// extends this to `connector:*` glob support if the spec patches §5.3 to
+// allow it; today we accept only the exact id form.
+export function checkConnectorAccess(
+  grant: ToolTokenGrant,
+  connectorId: string,
+): { ok: true } | { ok: false; reason: string } {
+  if (!grant.pluginSnapshotId) return { ok: true };
+  const tier = grant.pluginTrust ?? 'restricted';
+  if (tier !== 'restricted') return { ok: true };
+  const granted = new Set(grant.pluginCapabilitiesGranted ?? []);
+  if (granted.has(`connector:${connectorId}`) || granted.has('connector')) {
+    return { ok: true };
+  }
+  return {
+    ok: false,
+    reason: `restricted plugin (snapshot ${grant.pluginSnapshotId}) lacks "connector:${connectorId}" — grant via /api/plugins/:id/trust before retrying`,
+  };
 }
 
 export class ToolTokenRegistry {
@@ -102,6 +181,11 @@ export class ToolTokenRegistry {
       expiresAt: new Date(expiresAtMs).toISOString(),
       expiresAtMs,
       timer,
+      ...(options.pluginSnapshotId ? { pluginSnapshotId: options.pluginSnapshotId } : {}),
+      ...(options.pluginTrust ? { pluginTrust: options.pluginTrust } : {}),
+      ...(options.pluginCapabilitiesGranted
+        ? { pluginCapabilitiesGranted: [...options.pluginCapabilitiesGranted] }
+        : {}),
     };
 
     this.#byTokenHash.set(hash, stored);
@@ -139,6 +223,33 @@ export class ToolTokenRegistry {
     }
 
     return { ok: true, grant: asPublicGrant(stored) };
+  }
+
+  refreshToken(
+    token: string | null | undefined,
+    options: RefreshToolTokenOptions = {},
+  ): ToolTokenGrant | null {
+    if (!token) return null;
+    const stored = this.#byTokenHash.get(tokenHash(token));
+    if (!stored) return null;
+
+    const nowMs = options.nowMs ?? Date.now();
+    if (nowMs >= stored.expiresAtMs) {
+      this.revokeToken(token, 'ttl_expired');
+      return null;
+    }
+
+    const ttlMs = options.ttlMs ?? DEFAULT_TOOL_TOKEN_TTL_MS;
+    if (!Number.isFinite(ttlMs) || ttlMs <= 0) throw new Error('ttlMs must be positive');
+
+    clearTimeout(stored.timer);
+    stored.expiresAtMs = nowMs + ttlMs;
+    stored.expiresAt = new Date(stored.expiresAtMs).toISOString();
+    stored.timer = setTimeout(() => {
+      this.revokeToken(token, 'ttl_expired');
+    }, ttlMs);
+    stored.timer.unref?.();
+    return asPublicGrant(stored);
   }
 
   revokeToken(token: string | null | undefined, _reason: ToolTokenRevocationReason = 'manual'): boolean {

@@ -1,6 +1,11 @@
+import { recentProjectFixedStageDeckHtml } from '../../resources/recent-project-fixed-stage-deck.ts';
 import { playwrightUiScenarios } from '../../resources/playwright.ts';
 
-export type ScenarioKind = 'prototype' | 'deck' | 'template' | 'workspace';
+export function fixedStageDeckFixtureHtml(): string {
+  return recentProjectFixedStageDeckHtml;
+}
+
+export type ScenarioKind = 'prototype' | 'deck' | 'hyperframes' | 'image' | 'audio' | 'template' | 'workspace';
 
 export interface MockArtifactScenario {
   identifier: string;
@@ -8,6 +13,12 @@ export interface MockArtifactScenario {
   html: string;
   fileName: string;
   heading: string;
+}
+
+export interface ExpectedScenarioFile {
+  kind?: string;
+  name: string;
+  previewText?: string;
 }
 
 export interface UiScenario {
@@ -26,23 +37,37 @@ export interface UiScenario {
     | 'design-files-delete'
     | 'design-files-tab-persistence'
     | 'conversation-delete-recovery'
-    | 'question-form-selection-limit'
+    | 'question-form-single-selection'
     | 'question-form-submit-persistence'
+    | 'question-form-single-answer'
     | 'generation-does-not-create-extra-file'
     | 'comment-attachment-flow'
     | 'deck-pagination-next-prev-correctness'
     | 'deck-pagination-per-file-isolated'
     | 'uploaded-image-renders-in-preview'
-    | 'python-source-preview';
+    | 'python-source-preview'
+    | 'hyperframes-project-routing'
+    | 'image-project-routing'
+    | 'video-project-routing'
+    | 'audio-project-routing'
+    | 'live-artifact-project-routing'
+    | 'plugin-create-import';
   automated: boolean;
   description: string;
   create: {
     projectName: string;
-    tab?: 'prototype' | 'deck' | 'template' | 'other';
+    tab?: 'prototype' | 'live-artifact' | 'deck' | 'template' | 'media' | 'other';
+    mediaSurface?: 'image' | 'video' | 'audio';
+    videoModel?: string;
+    audioKind?: 'speech' | 'sfx';
   };
   prompt: string;
   secondaryPrompt?: string;
   mockArtifact?: MockArtifactScenario;
+  expectedProjectMetadata?: Record<string, unknown>;
+  expectedRunRequest?: Record<string, unknown>;
+  expectedFiles?: ExpectedScenarioFile[];
+  expectedPreviewText?: string;
   notes?: string[];
 }
 

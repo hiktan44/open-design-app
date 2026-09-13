@@ -14,13 +14,28 @@
  * @see https://github.com/nexu-io/open-design/issues/895
  */
 
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  appendDesktopLogLine,
+  createPackagedDesktopLogger,
   createFatalUncaughtExceptionHandler,
+  createFatalUnhandledRejectionHandler,
   isHarmlessSocketOptionError,
   type PackagedDesktopLogger,
 } from '../src/logging.js';
+import type { PackagedNamespacePaths } from '../src/paths.js';
+
+const ORIGINAL_CONSOLE = {
+  error: console.error,
+  info: console.info,
+  log: console.log,
+  warn: console.warn,
+};
 
 function stubLogger(): PackagedDesktopLogger {
   return {
@@ -31,8 +46,30 @@ function stubLogger(): PackagedDesktopLogger {
 }
 
 afterEach(() => {
+  console.error = ORIGINAL_CONSOLE.error;
+  console.info = ORIGINAL_CONSOLE.info;
+  console.log = ORIGINAL_CONSOLE.log;
+  console.warn = ORIGINAL_CONSOLE.warn;
   vi.restoreAllMocks();
 });
+
+function makePaths(root: string, desktopLogPath = join(root, 'logs', 'desktop', 'latest.log')): PackagedNamespacePaths {
+  return {
+    cacheRoot: join(root, 'cache'),
+    desktopLogPath,
+    dataRoot: join(root, 'data'),
+    desktopLogsRoot: join(root, 'logs', 'desktop'),
+    electronSessionDataRoot: join(root, 'user-data', 'session'),
+    electronUserDataRoot: join(root, 'user-data'),
+    installationRoot: root,
+    installerObservationRoot: join(root, 'data', 'observations', 'installer'),
+    logsRoot: join(root, 'logs'),
+    namespaceRoot: root,
+    resourceRoot: join(root, 'resources'),
+    runtimeRoot: join(root, 'runtime'),
+    updateRoot: join(root, 'updates'),
+  };
+}
 
 describe('isHarmlessSocketOptionError (issue #895)', () => {
   it('matches the canonical undici setTypeOfService EINVAL shape', () => {
@@ -103,6 +140,38 @@ describe('isHarmlessSocketOptionError (issue #895)', () => {
     const error = new Error('') as NodeJS.ErrnoException;
     error.code = 'EINVAL';
     expect(isHarmlessSocketOptionError(error)).toBe(false);
+  });
+});
+
+describe('createPackagedDesktopLogger log-write failures', () => {
+  it('drops descriptor-pressure append failures instead of throwing', () => {
+    const emfile = new Error('too many files') as NodeJS.ErrnoException;
+    emfile.code = 'EMFILE';
+    const append = vi.fn(() => {
+      throw emfile;
+    });
+
+    expect(appendDesktopLogLine('/tmp/latest.log', '{"level":"error"}\n', append)).toBe(false);
+    expect(append).toHaveBeenCalledWith('/tmp/latest.log', '{"level":"error"}\n', 'utf8');
+  });
+
+  it('does not let desktop log append failures escape through the logger', () => {
+    const root = mkdtempSync(join(tmpdir(), 'od-packaged-log-'));
+    const previousEcho = process.env.OD_DESKTOP_LOG_ECHO;
+    process.env.OD_DESKTOP_LOG_ECHO = '0';
+    try {
+      const logger = createPackagedDesktopLogger(makePaths(root, root));
+
+      expect(() => logger.error('packaged desktop fatal uncaught exception')).not.toThrow();
+      expect(() => console.error('renderer fetch failed')).not.toThrow();
+    } finally {
+      if (previousEcho == null) {
+        delete process.env.OD_DESKTOP_LOG_ECHO;
+      } else {
+        process.env.OD_DESKTOP_LOG_ECHO = previousEcho;
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
@@ -191,5 +260,82 @@ describe('createFatalUncaughtExceptionHandler (issue #906)', () => {
     // re-entered itself we'd see runaway scheduling.
     expect(setImmediateCallCount).toHaveLength(2);
     expect(logger.error).toHaveBeenCalledTimes(2);
+  });
+});
+
+// The parallel `unhandledRejection` listener mirrors the
+// uncaughtException policy: harmless EINVAL rejections log at warn
+// and return, anything else logs at error, detaches the listener, and
+// schedules a re-throw via setImmediate so Node/Electron's default
+// fail-fast path takes over. Before this factory landed, the inline
+// listener logged non-harmless rejections and returned, which silently
+// kept the main process alive after any rejected promise. Siri-Ray
+// and the codex P2 thread on PR #1298 flagged the same gap on the
+// parallel apps/desktop filter, so the two copies stay in lockstep.
+describe('createFatalUnhandledRejectionHandler (issue #647 review follow-up)', () => {
+  it('logs harmless socket option rejections at warn level and returns silently', () => {
+    const logger = stubLogger();
+    const handler = createFatalUnhandledRejectionHandler(logger);
+    const harmless = new Error('setTypeOfService EINVAL') as NodeJS.ErrnoException;
+    harmless.code = 'EINVAL';
+
+    const removeListenerSpy = vi.spyOn(process, 'removeListener');
+    const setImmediateSpy = vi.spyOn(globalThis, 'setImmediate');
+
+    handler(harmless);
+
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(removeListenerSpy).not.toHaveBeenCalled();
+    expect(setImmediateSpy).not.toHaveBeenCalled();
+  });
+
+  it('removes itself from unhandledRejection listeners before scheduling the rethrow', () => {
+    const logger = stubLogger();
+    const handler = createFatalUnhandledRejectionHandler(logger);
+
+    const removeListenerSpy = vi.spyOn(process, 'removeListener');
+    const scheduled: Array<() => void> = [];
+    const setImmediateSpy = vi
+      .spyOn(globalThis, 'setImmediate')
+      .mockImplementation(((fn: () => void) => {
+        scheduled.push(fn);
+        return 0 as unknown as NodeJS.Immediate;
+      }) as typeof setImmediate);
+
+    const realBug = new Error('failed ipc registration');
+    handler(realBug);
+
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(removeListenerSpy).toHaveBeenCalledWith('unhandledRejection', handler);
+    const removeOrder = removeListenerSpy.mock.invocationCallOrder[0]!;
+    const setImmediateOrder = setImmediateSpy.mock.invocationCallOrder[0]!;
+    expect(removeOrder).toBeLessThan(setImmediateOrder);
+
+    expect(scheduled).toHaveLength(1);
+    expect(() => scheduled[0]!()).toThrow(realBug);
+  });
+
+  it('falls through for primitive rejection reasons (Promise.reject(42))', () => {
+    // A primitive reason is never the undici socket shape, so the
+    // handler must reach the fail-fast path. Without this guard a
+    // `Promise.reject('boom')` would silently log and disappear.
+    const logger = stubLogger();
+    const handler = createFatalUnhandledRejectionHandler(logger);
+
+    const removeListenerSpy = vi.spyOn(process, 'removeListener');
+    const scheduled: Array<() => void> = [];
+    vi
+      .spyOn(globalThis, 'setImmediate')
+      .mockImplementation(((fn: () => void) => {
+        scheduled.push(fn);
+        return 0 as unknown as NodeJS.Immediate;
+      }) as typeof setImmediate);
+
+    handler(42);
+
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(removeListenerSpy).toHaveBeenCalledWith('unhandledRejection', handler);
+    expect(scheduled).toHaveLength(1);
   });
 });

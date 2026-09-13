@@ -1,43 +1,68 @@
 import { execFile, spawn } from "node:child_process";
-import { access, chmod, cp, mkdir, open, readFile, readdir, readlink, rename, rm, stat, writeFile } from "node:fs/promises";
+import { access, chmod, cp, mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, posix } from "node:path";
 import { promisify } from "node:util";
 
 import {
   APP_KEYS,
-  OPEN_DESIGN_SIDECAR_CONTRACT,
   SIDECAR_MESSAGES,
   SIDECAR_MODES,
   SIDECAR_SOURCES,
+  type DesktopEvalResult,
+  type DesktopScreenshotResult,
   type DesktopStatusSnapshot,
-  type SidecarStamp,
 } from "@open-design/sidecar-proto";
-import { createSidecarLaunchEnv, requestJsonIpc, resolveAppIpcPath } from "@open-design/sidecar";
 import {
-  collectProcessTreePids,
-  createPackageManagerInvocation,
-  createProcessStampArgs,
-  listProcessSnapshots,
-  readLogTail,
-  spawnBackgroundProcess,
-  stopProcesses,
-} from "@open-design/platform";
+  convergeSidecarLaunch,
+  findSidecarProcesses,
+  getSidecarStatus,
+  invokeSidecar,
+  stopSidecars,
+  type SidecarStamp,
+} from "@open-design/sidecar";
+import { createPackageManagerInvocation, readLogTail } from "@open-design/platform";
 
-import type { ToolPackConfig } from "./config.js";
-import { copyBundledResourceTrees, linuxResources } from "./resources.js";
+import type { ToolPackConfig } from "./config/index.js";
+import {
+  allPackagedSidecarStopRequests,
+  packagedSidecarStopRequests,
+  toolPackSidecarStamp,
+} from "./config/sidecar-stamps.js";
+import { domToPptxBundleResource } from "./dom-to-pptx-resource.js";
+import { copyBundledResourceTrees, linuxResources, packBundledDshRuntime } from "./resources/index.js";
+import { copyOptionalVelaCliBinary } from "./vela-cli.js";
+import { electronBuilderVersionForAppVersion, readRuntimeAppVersion } from "./versioning/index.js";
+import { runWorkspaceBuild } from "./workspace-build.js";
 
 const execFileAsync = promisify(execFile);
 
 const PRODUCT_NAME = "Open Design";
 const APP_IMAGE_PRODUCT_NAME = "Open-Design";
 const DESKTOP_LOG_ECHO_ENV = "OD_DESKTOP_LOG_ECHO";
+// The containerized build sets this to the standalone pnpm binary fetched by
+// buildDockerArgs; runProductionInstall reads it to avoid invoking `npm` inside
+// `electronuserland/builder:base`, which strips npm/npx/corepack.
+const PRODUCTION_INSTALL_PNPM_BIN_ENV = "OD_TOOLS_PACK_PNPM_BIN";
+const CONTAINER_PNPM_PATH = "/tmp/pnpm";
+const CONTAINER_PNPM_HOME = "/tmp/pnpm-home";
+const CONTAINER_NODE_VERSION = "24.14.1";
+const CONTAINER_TOOLS_PACK_CLI_PATH = "tools/pack/bin/tools-pack.mjs";
 
-const INTERNAL_PACKAGES = [
+export const INTERNAL_PACKAGES = [
+  { directory: "packages/release", name: "@open-design/release" },
+  { directory: "packages/components", name: "@open-design/components" },
   { directory: "packages/contracts", name: "@open-design/contracts" },
+  { directory: "packages/registry-protocol", name: "@open-design/registry-protocol" },
   { directory: "packages/sidecar-proto", name: "@open-design/sidecar-proto" },
-  { directory: "packages/sidecar", name: "@open-design/sidecar" },
+  { directory: "packages/launcher-proto", name: "@open-design/launcher-proto" },
   { directory: "packages/platform", name: "@open-design/platform" },
+  { directory: "packages/sidecar", name: "@open-design/sidecar" },
+  { directory: "packages/download", name: "@open-design/download" },
+  { directory: "packages/host", name: "@open-design/host" },
+  { directory: "packages/agui-adapter", name: "@open-design/agui-adapter" },
+  { directory: "packages/plugin-runtime", name: "@open-design/plugin-runtime" },
+  { directory: "packages/diagnostics", name: "@open-design/diagnostics" },
   { directory: "apps/daemon", name: "@open-design/daemon" },
   { directory: "apps/web", name: "@open-design/web" },
   { directory: "apps/desktop", name: "@open-design/desktop" },
@@ -46,6 +71,16 @@ const INTERNAL_PACKAGES = [
 
 export function sanitizeNamespace(value: string): string {
   return value.replace(/[^A-Za-z0-9._-]+/g, "-");
+}
+
+export type LinuxLifecycleAction = "cleanup" | "install" | "start" | "stop" | "uninstall";
+export type LinuxLifecycleMode = "appimage" | "headless";
+
+export function resolveLinuxLifecycleMode(
+  options: { headless?: boolean },
+  _action: LinuxLifecycleAction,
+): LinuxLifecycleMode {
+  return options.headless === true ? "headless" : "appimage";
 }
 
 async function pathExists(path: string): Promise<boolean> {
@@ -75,6 +110,10 @@ function toDockerMountPath(value: string): string {
   return value.replaceAll("\\", "/");
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
 export function buildDockerArgs(
   config: ToolPackConfig,
   user: DockerUserMapping,
@@ -99,35 +138,65 @@ export function buildDockerArgs(
   //   - config.to is enum-validated by resolveToolPackBuildOutput() in config.ts
   //     to one of "all" | "appimage" | "dir"
   //   - config.portable is a boolean
-  // None of these values can contain shell metacharacters, so direct
-  // interpolation into the inner command string is safe.
+  //   - config.appVersion is shell-quoted below because release versions can
+  //     carry punctuation that is not part of the namespace / target enums.
   //
-  // We can't rely on `corepack pnpm` here: although Node 16.10+ ships corepack,
-  // the `electronuserland/builder:base` image strips the corepack binary, so
-  // the inner `bash -lc` fails with `corepack: command not found`. We also
-  // can't `corepack enable` ourselves — the container runs as the host's
-  // non-root uid (--user above) and corepack would try to write shims next
-  // to the system Node binary, which is owned by root in this image.
+  // The `electronuserland/builder:base` image is intentionally minimal: it
+  // strips node/npm/npx/corepack from PATH. Every "ask the image to invoke a
+  // package-manager shim" path fails with `command not found`.
   //
-  // Use `npx --yes pnpm@<version>` instead: `npx` ships with npm (always
-  // present in the image), `--yes` skips the install confirmation, and the
-  // package gets cached under `$HOME/.npm/_npx`, which is writable by the
-  // unprivileged user. The pinned version matches the `packageManager`
-  // field in the root package.json so reproducibility is preserved.
+  // Download the official pnpm `linuxstatic-<arch>` standalone binary at
+  // container start. The binary bundles its own Node runtime, so it does not
+  // depend on the image's npm tooling. Select the asset by the container CPU so
+  // amd64 GitHub runners and arm64 local Docker hosts both work. Stage it under
+  // `/tmp/pnpm`, which is writable by the unprivileged container user. Then use
+  // it to install a pinned Node into PNPM_HOME so root lifecycle scripts and the
+  // final tools-pack CLI can run through an explicit `node .../tools-pack.mjs`
+  // entrypoint instead of generated `node_modules/.bin/*` shims.
+  //
+  // Route bootstrap and install diagnostics to stderr so stdout remains
+  // machine-readable when the inner `tools-pack linux build --json` emits JSON.
+  //
+  // The pinned version matches the `packageManager` field in the root
+  // package.json so reproducibility is preserved.
   const PNPM_VERSION = "10.33.2";
-  const pnpmCmd = `npx --yes pnpm@${PNPM_VERSION}`;
+  const pnpmLinuxStaticX64Sha256 = "a47be715939bafa420fbdc5e34f7f9d8292c032402162c89ccb611e944e526d6";
+  const pnpmLinuxStaticArm64Sha256 = "4d402d0ef12cdc4d81ca339904e68638d841f4e27c73e460534d06e6b56048a9";
+  const pnpmReleaseUrl = `https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}`;
+  const setupPnpm =
+    `command -v curl >/dev/null || { echo "curl not found in container image" >&2; exit 127; } && ` +
+    `mkdir -p ${CONTAINER_PNPM_HOME} && ` +
+    `case "$(uname -m)" in ` +
+    `x86_64) PNPM_ASSET=pnpm-linuxstatic-x64; PNPM_SHA256=${pnpmLinuxStaticX64Sha256} ;; ` +
+    `aarch64) PNPM_ASSET=pnpm-linuxstatic-arm64; PNPM_SHA256=${pnpmLinuxStaticArm64Sha256} ;; ` +
+    `*) echo "unsupported container arch: $(uname -m)" >&2; exit 1 ;; ` +
+    `esac && ` +
+    `curl --retry 3 --retry-all-errors --connect-timeout 10 --max-time 60 -fsSL "${pnpmReleaseUrl}/$PNPM_ASSET" -o ${CONTAINER_PNPM_PATH}.tmp && ` +
+    `echo "$PNPM_SHA256  ${CONTAINER_PNPM_PATH}.tmp" | sha256sum -c - && ` +
+    `mv ${CONTAINER_PNPM_PATH}.tmp ${CONTAINER_PNPM_PATH} && ` +
+    `chmod +x ${CONTAINER_PNPM_PATH} && ` +
+    `PNPM_HOME=${CONTAINER_PNPM_HOME} PATH=${CONTAINER_PNPM_HOME}:$PATH ${CONTAINER_PNPM_PATH} env use --global ${CONTAINER_NODE_VERSION} && ` +
+    `export PNPM_HOME=${CONTAINER_PNPM_HOME} PATH=${CONTAINER_PNPM_HOME}:$PATH && ` +
+    `command -v node >/dev/null`;
+  const pnpmCmd = CONTAINER_PNPM_PATH;
   const innerArgs = [
-    `${pnpmCmd} tools-pack linux build`,
+    `node ${CONTAINER_TOOLS_PACK_CLI_PATH} linux build`,
     `--to ${config.to}`,
     `--namespace ${config.namespace}`,
     "--dir /tools-pack",
   ];
+  if (config.requireVelaCli) {
+    innerArgs.push("--require-vela-cli");
+  }
   if (config.portable) {
     innerArgs.push("--portable");
   }
-  const innerCommand = `${pnpmCmd} install --frozen-lockfile && ` + innerArgs.join(" ");
+  if (config.appVersion != null) {
+    innerArgs.push(`--app-version ${shellQuote(config.appVersion)}`);
+  }
+  const innerCommand = `{ ${setupPnpm} && ${pnpmCmd} install --frozen-lockfile; } >&2 && ` + innerArgs.join(" ");
 
-  return [
+  const dockerArgs = [
     "run",
     "--rm",
     "--user",
@@ -148,13 +217,44 @@ export function buildDockerArgs(
     "ELECTRON_CACHE=/home/builder/.cache/electron",
     "-e",
     "ELECTRON_BUILDER_CACHE=/home/builder/.cache/electron-builder",
+    "-e",
+    `${PRODUCTION_INSTALL_PNPM_BIN_ENV}=${CONTAINER_PNPM_PATH}`,
+  ];
+  if (config.telemetryRelayUrl != null) {
+    dockerArgs.push("-e", `OPEN_DESIGN_TELEMETRY_RELAY_URL=${config.telemetryRelayUrl}`);
+  }
+  const velaBinHost = process.env.OPEN_DESIGN_VELA_CLI_BIN?.trim();
+  if (velaBinHost) {
+    // The container only mounts /project, /tools-pack and cache/home dirs by
+    // default, so a Vela CLI living outside those (a host path like
+    // `~/.local/bin/vela` is the common dev case) would be invisible inside.
+    // Bind-mount the containing directory read-only and rewrite the env to
+    // the container-side path so `copyOptionalVelaCliBinary` can actually
+    // read it.
+    const hostVelaDir = dirname(velaBinHost);
+    const velaBinBase = basename(velaBinHost);
+    const containerVelaDir = "/opt/vela-cli";
+    dockerArgs.push("-v", `${hostVelaDir}:${containerVelaDir}:ro`);
+    dockerArgs.push("-e", `OPEN_DESIGN_VELA_CLI_BIN=${containerVelaDir}/${velaBinBase}`);
+  }
+  if (config.amrProfile != null) {
+    dockerArgs.push("-e", `OPEN_DESIGN_AMR_PROFILE=${config.amrProfile}`);
+  }
+  // The vela web origin is resolved on the host (from the build-time secret)
+  // but the packaged config is written inside the container, so the containerized
+  // build needs it forwarded or the workspace-team gate stays closed.
+  if (config.velaWebUrl != null) {
+    dockerArgs.push("-e", `OD_VELA_WEB_URL=${config.velaWebUrl}`);
+  }
+  dockerArgs.push(
     "-w",
     "/project",
     "electronuserland/builder:base",
     "bash",
     "-lc",
     innerCommand,
-  ];
+  );
+  return dockerArgs;
 }
 
 export type DesktopTemplateValues = {
@@ -169,6 +269,61 @@ export function renderDesktopTemplate(template: string, values: DesktopTemplateV
     .replace(/@@EXEC_PATH@@/g, values.execPath)
     .replace(/@@ICON_PATH@@/g, values.iconName);
 }
+
+export function renderLinuxPackagedMainEntry(): string {
+  return 'import("@open-design/packaged").catch((error) => {\n  console.error("packaged entry failed", error);\n  process.exit(1);\n});\n';
+}
+
+export function renderLinuxAppImageAppRun(): string {
+  return `#!/bin/bash
+set -e
+
+THIS="$0"
+args=("$@")
+NUMBER_OF_ARGS="$#"
+
+if [ -z "$APPDIR" ] ; then
+  path="$(dirname "$(readlink -f "\${THIS}")")"
+  while [[ "$path" != "" && ! -e "$path/AppRun" ]]; do
+    path=\${path%/*}
+  done
+  APPDIR="$path"
+fi
+
+export PATH="\${APPDIR}:\${APPDIR}/usr/sbin:\${PATH}"
+export XDG_DATA_DIRS="./share/:/usr/share/gnome:/usr/local/share/:/usr/share/:\${XDG_DATA_DIRS}"
+export LD_LIBRARY_PATH="\${APPDIR}/usr/lib:\${LD_LIBRARY_PATH}"
+export XDG_DATA_DIRS="\${APPDIR}"/usr/share/:"\${XDG_DATA_DIRS}":/usr/share/gnome/:/usr/local/share/:/usr/share/
+export GSETTINGS_SCHEMA_DIR="\${APPDIR}/usr/share/glib-2.0/schemas:\${GSETTINGS_SCHEMA_DIR}"
+
+BIN="$APPDIR/${PRODUCT_NAME}"
+
+if [ -z "$APPIMAGE_EXIT_AFTER_INSTALL" ] ; then
+  trap atexit EXIT
+fi
+
+isEulaAccepted=1
+
+atexit()
+{
+  if [ $isEulaAccepted == 1 ] ; then
+    unset ELECTRON_RUN_AS_NODE
+    if [ $NUMBER_OF_ARGS -eq 0 ] ; then
+      exec "$BIN"
+    else
+      exec "$BIN" "\${args[@]}"
+    fi
+  fi
+}
+
+if [ -z "$APPIMAGE" ] ; then
+  export APPIMAGE="$APPDIR/AppRun"
+  # not running from within an AppImage; hence using the AppRun for Exec=
+fi
+`;
+}
+
+export const LINUX_APPIMAGE_EXECUTABLE_ARGS = ["--no-sandbox"] as const;
 
 export type AppImageProcessSnapshot = {
   pid: number;
@@ -187,8 +342,16 @@ export function matchesAppImageProcess(
   // In both cases the AppImage runtime sets $APPIMAGE to the original install path.
   const isMountedRunner = /^\/tmp\/\.mount_[^/]+\/AppRun$/.test(snapshot.executable);
   const isExtractedRunner = /^\/tmp\/appimage_extracted_[^/]+\/[^/]+$/.test(snapshot.executable);
-  if (!isMountedRunner && !isExtractedRunner) return false;
-  return snapshot.env.APPIMAGE === installPath;
+  if ((isMountedRunner || isExtractedRunner) && snapshot.env.APPIMAGE === installPath) {
+    return true;
+  }
+
+  // Direct AppRun launches do not know the installed .AppImage path. Our AppRun
+  // fallback sets $APPIMAGE to the sibling AppRun before execing Electron.
+  return (
+    posix.basename(snapshot.executable) === PRODUCT_NAME &&
+    snapshot.env.APPIMAGE === posix.join(posix.dirname(snapshot.executable), "AppRun")
+  );
 }
 
 // --- Step 1: LinuxPaths type and resolveLinuxPaths ---
@@ -196,6 +359,7 @@ export function matchesAppImageProcess(
 type LinuxPaths = {
   appBuilderConfigPath: string;
   appBuilderOutputRoot: string;
+  appImageAppRunPath: string;
   appImagePath: string;
   assembledAppRoot: string;
   assembledMainEntryPath: string;
@@ -227,6 +391,7 @@ function resolveLinuxPaths(config: ToolPackConfig): LinuxPaths {
   return {
     appBuilderConfigPath: join(namespaceRoot, "builder-config.json"),
     appBuilderOutputRoot,
+    appImageAppRunPath: join(namespaceRoot, "appimage", "AppRun"),
     appImagePath: "",
     assembledAppRoot: join(namespaceRoot, "assembled", "app"),
     assembledMainEntryPath: join(namespaceRoot, "assembled", "app", "main.cjs"),
@@ -263,43 +428,38 @@ async function runPnpm(
   });
 }
 
-async function runNpmInstall(appRoot: string): Promise<void> {
-  await execFileAsync("npm", ["install", "--omit=dev", "--no-package-lock"], {
+export type ProductionInstallCommand = { command: string; args: string[] };
+
+// Picks the package manager used to materialize the assembled-app node_modules
+// during writeAssembledApp. The default (`npm`) preserves host behavior for
+// developer-machine builds. When the build runs inside
+// `electronuserland/builder:base` (which strips npm, npx, and corepack),
+// buildDockerArgs sets OD_TOOLS_PACK_PNPM_BIN to the standalone pnpm binary it
+// bootstrapped, and this resolver routes the install through that binary.
+// `--config.node-linker=hoisted` keeps the resulting layout flat so
+// electron-builder packs node_modules the same way it does for npm-installed
+// trees.
+export function resolveProductionInstallCommand(env: NodeJS.ProcessEnv): ProductionInstallCommand {
+  const pnpmBin = env[PRODUCTION_INSTALL_PNPM_BIN_ENV];
+  if (pnpmBin != null && pnpmBin.length > 0) {
+    return {
+      command: pnpmBin,
+      args: ["install", "--prod", "--no-lockfile", "--config.node-linker=hoisted"],
+    };
+  }
+  return { command: "npm", args: ["install", "--omit=dev", "--no-package-lock"] };
+}
+
+async function runProductionInstall(appRoot: string): Promise<void> {
+  const { command, args } = resolveProductionInstallCommand(process.env);
+  await execFileAsync(command, args, {
     cwd: appRoot,
     env: process.env,
   });
 }
 
 async function readPackagedVersion(config: ToolPackConfig): Promise<string> {
-  const packageJsonPath = join(config.workspaceRoot, "apps", "packaged", "package.json");
-  const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8")) as { version?: unknown };
-  if (typeof packageJson.version !== "string" || packageJson.version.length === 0) {
-    throw new Error(`missing apps/packaged package version in ${packageJsonPath}`);
-  }
-  return packageJson.version;
-}
-
-async function buildWorkspaceArtifacts(config: ToolPackConfig): Promise<void> {
-  const webNextEnvPath = join(config.workspaceRoot, "apps", "web", "next-env.d.ts");
-  const previousWebNextEnv = await readFile(webNextEnvPath, "utf8").catch(() => null);
-
-  await runPnpm(config, ["--filter", "@open-design/contracts", "build"]);
-  await runPnpm(config, ["--filter", "@open-design/sidecar-proto", "build"]);
-  await runPnpm(config, ["--filter", "@open-design/sidecar", "build"]);
-  await runPnpm(config, ["--filter", "@open-design/platform", "build"]);
-  await runPnpm(config, ["--filter", "@open-design/daemon", "build"]);
-  try {
-    await runPnpm(config, ["--filter", "@open-design/web", "build"], { OD_WEB_OUTPUT_MODE: "server" });
-    await runPnpm(config, ["--filter", "@open-design/web", "build:sidecar"]);
-  } finally {
-    if (previousWebNextEnv == null) {
-      await rm(webNextEnvPath, { force: true });
-    } else {
-      await writeFile(webNextEnvPath, previousWebNextEnv, "utf8");
-    }
-  }
-  await runPnpm(config, ["--filter", "@open-design/desktop", "build"]);
-  await runPnpm(config, ["--filter", "@open-design/packaged", "build"]);
+  return readRuntimeAppVersion(config);
 }
 
 // --- Step 3: Tarball + resource helpers ---
@@ -337,9 +497,18 @@ async function copyResourceTree(config: ToolPackConfig, paths: LinuxPaths): Prom
     workspaceRoot: config.workspaceRoot,
     resourceRoot: paths.resourceRoot,
   });
+  await packBundledDshRuntime({
+    workspaceRoot: config.workspaceRoot,
+    resourceRoot: paths.resourceRoot,
+  });
   await mkdir(join(paths.resourceRoot, "bin"), { recursive: true });
   await cp(process.execPath, join(paths.resourceRoot, "bin", "node"));
   await chmod(join(paths.resourceRoot, "bin", "node"), 0o755);
+  await copyOptionalVelaCliBinary({
+    platform: "linux",
+    requireBundled: config.requireVelaCli,
+    resourceRoot: paths.resourceRoot,
+  });
 }
 
 // --- Step 4: writeAssembledApp helper ---
@@ -351,6 +520,10 @@ async function writeAssembledApp(
 ): Promise<void> {
   await rm(paths.assembledAppRoot, { force: true, recursive: true });
   await mkdir(paths.assembledAppRoot, { recursive: true });
+  await cp(
+    join(config.workspaceRoot, "apps", "desktop", "dist", "main", "preload.cjs"),
+    join(paths.assembledAppRoot, "preload.cjs"),
+  );
 
   const dependencies: Record<string, string> = {};
   for (const tarball of packed) {
@@ -358,25 +531,37 @@ async function writeAssembledApp(
   }
 
   const version = await readPackagedVersion(config);
+  const packageVersion = electronBuilderVersionForAppVersion(version);
   const packageJson = {
     name: "open-design-packaged",
-    version,
+    version: packageVersion,
     private: true,
     main: "main.cjs",
     dependencies,
+    description: "Local-first design product: detects your installed code-agent CLI, runs design skills + design systems, streams artifacts into a sandboxed preview.",
+    author: "Open Design Team",
+    repository: {
+      type: "git",
+      url: "https://github.com/nexu-io/open-design.git"
+    }
   };
   await writeFile(paths.assembledPackageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`, "utf8");
 
-  const mainStub = `"use strict";\nrequire("@open-design/packaged");\n`;
-  await writeFile(paths.assembledMainEntryPath, mainStub, "utf8");
+  await writeFile(paths.assembledMainEntryPath, renderLinuxPackagedMainEntry(), "utf8");
 
   await writeFile(
     paths.packagedConfigPath,
     `${JSON.stringify(
       {
+        ...(config.amrProfile == null ? {} : { amrProfile: config.amrProfile }),
         appVersion: version,
         namespace: config.namespace,
         nodeCommandRelative: "open-design/bin/node",
+        ...(config.telemetryRelayUrl == null ? {} : { telemetryRelayUrl: config.telemetryRelayUrl }),
+        ...(config.posthogKey == null ? {} : { posthogKey: config.posthogKey }),
+        ...(config.posthogHost == null ? {} : { posthogHost: config.posthogHost }),
+        ...(config.velaWebUrl == null ? {} : { velaWebUrl: config.velaWebUrl }),
+        ...(config.velaWebUrls == null ? {} : { velaWebUrls: config.velaWebUrls }),
         ...(config.portable ? {} : { namespaceBaseRoot: config.roots.runtime.namespaceBaseRoot }),
       },
       null,
@@ -385,7 +570,13 @@ async function writeAssembledApp(
     "utf8",
   );
 
-  await runNpmInstall(paths.assembledAppRoot);
+  await runProductionInstall(paths.assembledAppRoot);
+}
+
+async function writeLinuxAppImageAppRun(paths: LinuxPaths): Promise<void> {
+  await mkdir(dirname(paths.appImageAppRunPath), { recursive: true });
+  await writeFile(paths.appImageAppRunPath, renderLinuxAppImageAppRun(), "utf8");
+  await chmod(paths.appImageAppRunPath, 0o755);
 }
 
 // --- Step 5: writeLinuxBuilderConfig helper ---
@@ -394,6 +585,7 @@ async function writeLinuxBuilderConfig(config: ToolPackConfig, paths: LinuxPaths
   const target = config.to === "dir" ? ["dir"] : ["AppImage"];
   const namespaceToken = sanitizeNamespace(config.namespace);
   const packagedVersion = await readPackagedVersion(config);
+  const packageVersion = electronBuilderVersionForAppVersion(packagedVersion);
 
   const builderConfig: Record<string, unknown> = {
     appId: "io.open-design.desktop",
@@ -407,19 +599,34 @@ async function writeLinuxBuilderConfig(config: ToolPackConfig, paths: LinuxPaths
       buildResources: dirname(linuxResources.icon),
     },
     electronVersion: config.electronVersion.replace(/^[^\d]*/, ""),
-    electronDist: config.electronDistPath,
+    // See tools/pack/src/win/builder.ts: rely on electron-builder's own
+    // Electron download rather than node_modules' dist, which pnpm does not
+    // reliably materialize on CI runners.
     executableName: PRODUCT_NAME,
     extraMetadata: {
       main: "./main.cjs",
       name: "open-design-packaged-app",
       productName: PRODUCT_NAME,
-      version: packagedVersion,
+      version: packageVersion,
       ...(config.portable ? {} : { odToolsPackRuntimeRoot: config.roots.runtime.namespaceBaseRoot }),
     },
     extraResources: [
       { from: paths.resourceRoot, to: "open-design" },
       { from: paths.packagedConfigPath, to: "open-design-config.json" },
+      // Vendored dom-to-pptx browser bundle for editable PPTX export (read from
+      // process.resourcesPath by the desktop main at runtime).
+      domToPptxBundleResource(config),
     ],
+    ...(config.to === "dir"
+      ? {}
+      : {
+          extraFiles: [
+            {
+              from: paths.appImageAppRunPath,
+              to: "AppRun",
+            },
+          ],
+        }),
     files: ["**/*", "!**/node_modules/.bin", "!**/node_modules/electron{,/**/*}"],
     icon: linuxResources.icon,
     linux: {
@@ -428,6 +635,12 @@ async function writeLinuxBuilderConfig(config: ToolPackConfig, paths: LinuxPaths
       category: "Development",
       synopsis: "Open Design",
       maintainer: "Open Design Contributors",
+    },
+    // Keep the AppImage launch fallback explicit. Our top-level AppRun wrapper
+    // clears ELECTRON_RUN_AS_NODE before these Chromium flags reach Electron,
+    // including for AppImageLauncher-generated desktop entries.
+    appImage: {
+      executableArgs: [...LINUX_APPIMAGE_EXECUTABLE_ARGS],
     },
     nodeGypRebuild: false,
     npmRebuild: false,
@@ -493,10 +706,16 @@ export async function packLinux(config: ToolPackConfig): Promise<LinuxPackResult
 
   const paths = resolveLinuxPaths(config);
   await mkdir(config.roots.output.namespaceRoot, { recursive: true });
-  await buildWorkspaceArtifacts(config);
+  await runWorkspaceBuild(
+    config,
+    async (args, extraEnv) => await runPnpm(config, args, extraEnv),
+  );
   await copyResourceTree(config, paths);
   const tarballs = await collectWorkspaceTarballs(config, paths);
   await writeAssembledApp(config, paths, tarballs);
+  if (config.to !== "dir") {
+    await writeLinuxAppImageAppRun(paths);
+  }
   await writeLinuxBuilderConfig(config, paths);
   await runElectronBuilderLinux(config, paths);
 
@@ -632,28 +851,25 @@ export type LinuxStartResult = {
   status: DesktopStatusSnapshot | null;
 };
 
-type DesktopRootIdentityMarker = {
-  appPath: string;
-  executablePath: string;
-  logPath: string;
-  namespaceRoot: string;
-  pid: number;
-  ppid: number;
-  stamp: SidecarStamp;
-  startedAt: string;
-  updatedAt: string;
-  version: 1;
+export type LinuxInspectResult = {
+  eval?: DesktopEvalResult;
+  screenshot?: DesktopScreenshotResult;
+  status: DesktopStatusSnapshot | null;
 };
 
-type DesktopRootIdentityFallback = {
-  marker?: Partial<DesktopRootIdentityMarker>;
-  markerPath: string;
-  processCommand?: string;
+export function shouldRejectLinuxHeadlessInspectOptions(options: {
+  expr?: string;
+  path?: string;
+}): boolean {
+  return options.expr != null || options.path != null;
+}
+
+type SidecarDiscoveryFallback = {
   reason: string;
 };
 
 export type LinuxStopResult = {
-  fallback?: DesktopRootIdentityFallback;
+  fallback?: SidecarDiscoveryFallback;
   gracefulRequested: boolean;
   namespace: string;
   remainingPids: number[];
@@ -661,117 +877,55 @@ export type LinuxStopResult = {
   stoppedPids: number[];
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value != null && !Array.isArray(value);
-}
-
-function isDesktopRootIdentityMarker(value: unknown): value is DesktopRootIdentityMarker {
-  if (!isRecord(value)) return false;
-  return (
-    value.version === 1 &&
-    typeof value.pid === "number" &&
-    typeof value.ppid === "number" &&
-    typeof value.appPath === "string" &&
-    typeof value.executablePath === "string" &&
-    typeof value.logPath === "string" &&
-    typeof value.namespaceRoot === "string" &&
-    typeof value.startedAt === "string" &&
-    typeof value.updatedAt === "string" &&
-    isRecord(value.stamp)
-  );
-}
-
-async function readDesktopRootIdentityMarker(config: ToolPackConfig): Promise<{
-  fallback: DesktopRootIdentityFallback;
-  marker: DesktopRootIdentityMarker | null;
-}> {
-  const markerPath = desktopIdentityPath(config);
-  let payload: unknown;
-  try {
-    payload = JSON.parse(await readFile(markerPath, "utf8"));
-  } catch (error) {
-    const code = isRecord(error) && "code" in error ? String(error.code) : null;
-    return {
-      fallback: { markerPath, reason: code === "ENOENT" ? "marker-not-found" : "marker-read-failed" },
-      marker: null,
-    };
-  }
-  if (!isDesktopRootIdentityMarker(payload)) {
-    return { fallback: { markerPath, reason: "marker-invalid-shape" }, marker: null };
-  }
-  return {
-    fallback: { marker: payload, markerPath, reason: "marker-present" },
-    marker: payload,
-  };
-}
-
-async function readProcessEnv(pid: number): Promise<Record<string, string>> {
-  try {
-    const raw = await readFile(`/proc/${pid}/environ`, "utf8");
-    const result: Record<string, string> = {};
-    for (const entry of raw.split("\0")) {
-      const eq = entry.indexOf("=");
-      if (eq <= 0) continue;
-      result[entry.slice(0, eq)] = entry.slice(eq + 1);
-    }
-    return result;
-  } catch {
-    return {};
-  }
-}
-
-async function readProcessExe(pid: number): Promise<string> {
-  try {
-    return await readlink(`/proc/${pid}/exe`);
-  } catch {
-    return "";
-  }
-}
-
 function desktopLogPath(config: ToolPackConfig): string {
   return join(config.roots.runtime.namespaceRoot, "logs", APP_KEYS.DESKTOP, "latest.log");
 }
 
-function desktopIdentityPath(config: ToolPackConfig): string {
-  return join(config.roots.runtime.namespaceRoot, "runtime", "desktop-root.json");
+function linuxStamp(
+  config: ToolPackConfig,
+  options: {
+    app?: SidecarStamp["app"];
+    mode?: string;
+    source?: typeof SIDECAR_SOURCES.TOOLS_PACK | typeof SIDECAR_SOURCES.PACKAGED;
+  } = {},
+): SidecarStamp {
+  return toolPackSidecarStamp(config, options);
 }
 
-function linuxDesktopStamp(config: ToolPackConfig): SidecarStamp {
-  return {
-    app: APP_KEYS.DESKTOP,
-    ipc: resolveAppIpcPath({
-      app: APP_KEYS.DESKTOP,
-      contract: OPEN_DESIGN_SIDECAR_CONTRACT,
-      namespace: config.namespace,
-    }),
-    mode: SIDECAR_MODES.RUNTIME,
-    namespace: config.namespace,
-    source: SIDECAR_SOURCES.TOOLS_PACK,
-  };
+export function createLinuxDesktopLaunchEnv(
+  _config: ToolPackConfig,
+  _stamp: SidecarStamp,
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...baseEnv, [DESKTOP_LOG_ECHO_ENV]: "0" };
+  delete env.ELECTRON_RUN_AS_NODE;
+  return env;
 }
 
-async function waitForMarker(markerPath: string, timeoutMs: number): Promise<boolean> {
+type ReachableLinuxSidecar<T> = {
+  stamp: SidecarStamp;
+  status: T;
+};
+
+async function resolveReachableLinuxSidecar<T>(
+  stamps: readonly SidecarStamp[],
+  timeoutMs: number,
+): Promise<ReachableLinuxSidecar<T> | null> {
+  const probes = await Promise.all(stamps.map(async (stamp): Promise<ReachableLinuxSidecar<T> | null> => {
+    const status = await getSidecarStatus<T>(stamp, { timeoutMs }).catch(() => null);
+    return status == null ? null : { stamp, status };
+  }));
+  return probes.find((probe): probe is ReachableLinuxSidecar<T> => probe != null) ?? null;
+}
+
+async function waitForLinuxStatus<T>(stamps: readonly SidecarStamp[], timeoutMs: number): Promise<ReachableLinuxSidecar<T> | null> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (await pathExists(markerPath)) return true;
+    const active = await resolveReachableLinuxSidecar<T>(stamps, 1_000);
+    if (active != null) return active;
     await new Promise((r) => setTimeout(r, 200));
   }
-  return false;
-}
-
-async function fetchDesktopStatus(config: ToolPackConfig): Promise<DesktopStatusSnapshot | null> {
-  try {
-    const ipc = resolveAppIpcPath({
-      contract: OPEN_DESIGN_SIDECAR_CONTRACT,
-      namespace: config.namespace,
-      app: APP_KEYS.DESKTOP,
-    });
-    const reply = await requestJsonIpc(ipc, { type: SIDECAR_MESSAGES.STATUS });
-    if (reply == null || typeof reply !== "object") return null;
-    return reply as DesktopStatusSnapshot;
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 export async function startPackedLinuxApp(config: ToolPackConfig): Promise<LinuxStartResult> {
@@ -789,52 +943,38 @@ export async function startPackedLinuxApp(config: ToolPackConfig): Promise<Linux
   await mkdir(dirname(logPath), { recursive: true });
   await writeFile(logPath, "", "utf8");
 
-  // Remove any stale desktop-root.json from a previous run that didn't stop
-  // cleanly (SIGKILL, OOM, crash). Otherwise waitForMarker below would return
-  // instantly on the stale file instead of waiting for the new spawn's marker.
-  await rm(desktopIdentityPath(config), { force: true }).catch(() => undefined);
-
-  const stamp = linuxDesktopStamp(config);
+  const stamp = linuxStamp(config);
+  const launchStamps = [
+    stamp,
+    linuxStamp(config, { source: SIDECAR_SOURCES.PACKAGED }),
+  ];
 
   // --appimage-extract-and-run bypasses FUSE-mounted SquashFS, which is too slow
   // for daemon startup on first launch (smoke testing showed startup exceeded the
   // packaged sidecar's 35-second timeout when running from FUSE).
-  const args = ["--appimage-extract-and-run", ...createProcessStampArgs(stamp, OPEN_DESIGN_SIDECAR_CONTRACT)];
-
-  const child = await spawnBackgroundProcess({
-    args,
+  const convergence = await convergeSidecarLaunch({
+    args: ["--appimage-extract-and-run"],
     command: appImagePath,
     cwd: dirname(appImagePath),
-    env: createSidecarLaunchEnv({
-      base: join(config.roots.runtime.namespaceRoot, "runtime"),
-      contract: OPEN_DESIGN_SIDECAR_CONTRACT,
-      extraEnv: { ...process.env, [DESKTOP_LOG_ECHO_ENV]: "0" },
-      stamp,
-    }),
+    env: createLinuxDesktopLaunchEnv(config, stamp),
     logFd: null,
-  });
+    resources: {
+      dataRoot: join(config.roots.runtime.namespaceRoot, "data"),
+      ownerPid: null,
+      port: 0,
+      runtimeRoot: join(config.roots.runtime.namespaceRoot, "runtime"),
+    },
+    stamp,
+  }, { ownerStamps: launchStamps, timeoutMs: 60_000 });
 
   // 60s ceiling: AppImage --appimage-extract-and-run unpacks ~200MB to /tmp on
   // first launch before exec'ing the inner electron, which adds substantial
   // overhead vs mac's direct .app launch.
   //
-  // If the readiness wait or the post-ready status fetch throws, the detached
-  // child we just spawned is still running but unidentifiable to a future
-  // `linux stop` (the marker is the only persistent identity source). Tear it
-  // down via the same process-tree path stopPackedLinuxApp uses, then rethrow
-  // so the failure surfaces to the caller. Any cleanup error is suppressed --
-  // we want the original failure preserved in the rejection.
-  const markerPath = desktopIdentityPath(config);
-  let status: DesktopStatusSnapshot | null;
-  try {
-    const ready = await waitForMarker(markerPath, 60_000);
-    if (!ready) {
-      throw new Error(`desktop-root.json not written within 60s at ${markerPath}`);
-    }
-    status = await fetchDesktopStatus(config);
-  } catch (error) {
-    await teardownOrphanedStart(child.pid).catch(() => undefined);
-    throw error;
+  const active = await waitForLinuxStatus<DesktopStatusSnapshot>(launchStamps, 60_000);
+  if (active == null) {
+    await stopSidecars(launchStamps.map((candidate) => ({ stamp: candidate }))).catch(() => undefined);
+    throw new Error(`desktop sidecar did not become ready within 60s for ${config.namespace}`);
   }
 
   return {
@@ -842,122 +982,21 @@ export async function startPackedLinuxApp(config: ToolPackConfig): Promise<Linux
     executablePath: appImagePath,
     logPath,
     namespace: config.namespace,
-    pid: child.pid,
+    pid: convergence.description.resources.pid,
     source,
-    status,
+    status: active.status,
   };
 }
 
-async function teardownOrphanedStart(rootPid: number): Promise<void> {
-  const snapshots = await listProcessSnapshots();
-  const treePids = collectProcessTreePids(snapshots, [rootPid]);
-  await stopProcesses(treePids);
-}
-
 export async function stopPackedLinuxApp(config: ToolPackConfig): Promise<LinuxStopResult> {
-  const paths = resolveLinuxPaths(config);
-  const { fallback, marker } = await readDesktopRootIdentityMarker(config);
-
-  if (marker == null) {
-    return {
-      fallback,
-      gracefulRequested: false,
-      namespace: config.namespace,
-      remainingPids: [],
-      status: "not-running",
-      stoppedPids: [],
-    };
-  }
-
-  // Validate the marker still represents a live, owned process.
-  const snapshots = await listProcessSnapshots();
-  const candidate = snapshots.find((s) => s.pid === marker.pid);
-  if (candidate == null) {
-    return {
-      fallback: { ...fallback, reason: "marker-pid-not-running" },
-      gracefulRequested: false,
-      namespace: config.namespace,
-      remainingPids: [],
-      status: "not-running",
-      stoppedPids: [],
-    };
-  }
-
-  // Validate the marker stamp (file content written by apps/packaged itself)
-  // rather than the process command line. Menu launches via the .desktop
-  // entry don't pass createProcessStampArgs to the AppImage -- they only set
-  // OD_PACKAGED_NAMESPACE -- so apps/packaged falls back to a SIDECAR_SOURCES.PACKAGED
-  // stamp. Validating the process command would reject those legitimate
-  // launches as `unmanaged`, which on uninstall would also remove the
-  // AppImage/desktop/icon files out from under the still-running app.
-  // Accept either TOOLS_PACK (CLI start) or PACKAGED (menu launch). Mirrors
-  // the dual-source acceptance pattern in mac/lifecycle.ts.
-  const expectedIpc = resolveAppIpcPath({
-    app: APP_KEYS.DESKTOP,
-    contract: OPEN_DESIGN_SIDECAR_CONTRACT,
-    namespace: config.namespace,
-  });
-  const stampOk =
-    marker.stamp.app === APP_KEYS.DESKTOP &&
-    marker.stamp.mode === SIDECAR_MODES.RUNTIME &&
-    marker.stamp.namespace === config.namespace &&
-    marker.stamp.ipc === expectedIpc &&
-    (marker.stamp.source === SIDECAR_SOURCES.TOOLS_PACK ||
-      marker.stamp.source === SIDECAR_SOURCES.PACKAGED);
-  const exePath = await readProcessExe(marker.pid);
-  const env = await readProcessEnv(marker.pid);
-  // marker.appPath is unreliable on Linux (apps/packaged writes "/"). Use the
-  // canonical install path we know about, falling back to the built AppImage
-  // for not-yet-installed builds.
-  const candidateAppImagePath =
-    (await pathExists(paths.installAppImagePath)) ? paths.installAppImagePath : await findBuiltAppImage(paths);
-  const cmdOk = candidateAppImagePath != null && matchesAppImageProcess(
-    { pid: marker.pid, executable: exePath, env },
-    candidateAppImagePath,
-  );
-
-  if (!stampOk || !cmdOk || marker.namespaceRoot !== config.roots.runtime.namespaceRoot) {
-    return {
-      fallback: {
-        ...fallback,
-        marker: { pid: marker.pid, stamp: marker.stamp },
-        processCommand: candidate.command,
-        reason: "marker-validation-failed",
-      },
-      gracefulRequested: false,
-      namespace: config.namespace,
-      remainingPids: [marker.pid],
-      status: "unmanaged",
-      stoppedPids: [],
-    };
-  }
-
-  // Try graceful shutdown via IPC first. mac/lifecycle.ts's pattern: best-effort SHUTDOWN
-  // request with a short timeout so Electron renderers + sidecars get a chance
-  // to flush state (SQLite WAL, logs) before SIGTERM.
-  let gracefulRequested = false;
-  try {
-    await requestJsonIpc(marker.stamp.ipc, { type: SIDECAR_MESSAGES.SHUTDOWN }, { timeoutMs: 1500 });
-    gracefulRequested = true;
-  } catch {
-    gracefulRequested = false;
-  }
-
-  // Gather process tree, then SIGTERM -> SIGKILL via stopProcesses.
-  const treePids = collectProcessTreePids(snapshots, [marker.pid]);
-  const result = await stopProcesses(treePids);
-
-  // Remove the marker on a clean stop so the next start has a fresh slate.
-  if (result.remainingPids.length === 0) {
-    await rm(desktopIdentityPath(config), { force: true }).catch(() => undefined);
-  }
+  const stopped = await stopSidecars(allPackagedSidecarStopRequests(config));
 
   return {
-    gracefulRequested,
+    gracefulRequested: stopped.gracefulAccepted,
     namespace: config.namespace,
-    remainingPids: result.remainingPids,
-    status: result.remainingPids.length === 0 ? "stopped" : "partial",
-    stoppedPids: result.stoppedPids,
+    remainingPids: stopped.remainingPids,
+    status: stopped.remainingPids.length > 0 ? "partial" : stopped.matchedPids.length > 0 ? "stopped" : "not-running",
+    stoppedPids: stopped.stoppedPids,
   };
 }
 
@@ -976,12 +1015,50 @@ export async function readPackedLinuxLogs(config: ToolPackConfig): Promise<{
   return { logs, namespace: config.namespace };
 }
 
+export async function inspectPackedLinuxApp(
+  config: ToolPackConfig,
+  options: { expr?: string; headless?: boolean; path?: string },
+): Promise<LinuxInspectResult> {
+  if (options.headless === true && shouldRejectLinuxHeadlessInspectOptions(options)) {
+    throw new Error("linux inspect --headless supports status only; omit --expr and --path");
+  }
+
+  const stamps = [
+    linuxStamp(config, { mode: options.headless === true ? "headless" : SIDECAR_MODES.RUNTIME }),
+    linuxStamp(config, {
+      mode: options.headless === true ? "headless" : SIDECAR_MODES.RUNTIME,
+      source: SIDECAR_SOURCES.PACKAGED,
+    }),
+  ];
+  const active = await resolveReachableLinuxSidecar<DesktopStatusSnapshot>(stamps, 2000);
+  const stamp = active?.stamp ?? stamps[0];
+  const status = active?.status ?? null;
+
+  if (options.headless === true) {
+    return { status };
+  }
+
+  return {
+    ...(options.expr == null
+      ? {}
+      : {
+          eval: await invokeSidecar<DesktopEvalResult>(stamp, SIDECAR_MESSAGES.EVAL, { expression: options.expr }, { timeoutMs: 5000 }),
+        }),
+    ...(options.path == null
+      ? {}
+      : {
+          screenshot: await invokeSidecar<DesktopScreenshotResult>(stamp, SIDECAR_MESSAGES.SCREENSHOT, { path: options.path }, { timeoutMs: 10000 }),
+        }),
+    status,
+  };
+}
+
 export type LinuxUninstallResult = {
   namespace: string;
   removed: {
-    appImage: "ok" | "already-removed" | "skipped-process-running";
-    desktop: "ok" | "already-removed" | "skipped-process-running";
-    icon: "ok" | "already-removed" | "skipped-process-running";
+    appImage: "ok" | "already-removed";
+    desktop: "ok" | "already-removed";
+    icon: "ok" | "already-removed";
   };
   stop: LinuxStopResult;
   postUninstall: {
@@ -1004,26 +1081,17 @@ async function tryRemove(path: string): Promise<"ok" | "already-removed"> {
 // ours -- in both cases something is still using the AppImage's mounted or
 // extracted contents, so destructive removal would leave broken file handles
 // and an orphan with stale state.
-function isSafeToRemoveInstallFiles(stop: LinuxStopResult): boolean {
-  return stop.status === "stopped" || stop.status === "not-running";
+function assertLinuxStopComplete(stop: LinuxStopResult, operation: string): void {
+  if (stop.status === "stopped" || stop.status === "not-running") return;
+  throw new Error(
+    `cannot ${operation} packaged namespace while sidecar processes remain: ${stop.remainingPids.join(", ") || stop.status}`,
+  );
 }
 
 export async function uninstallPackedLinuxApp(config: ToolPackConfig): Promise<LinuxUninstallResult> {
   const paths = resolveLinuxPaths(config);
   const stop = await stopPackedLinuxApp(config);
-
-  if (!isSafeToRemoveInstallFiles(stop)) {
-    return {
-      namespace: config.namespace,
-      removed: {
-        appImage: "skipped-process-running",
-        desktop: "skipped-process-running",
-        icon: "skipped-process-running",
-      },
-      stop,
-      postUninstall: { desktopDatabase: "skipped", iconCache: "skipped" },
-    };
-  }
+  assertLinuxStopComplete(stop, "uninstall");
 
   const removedAppImage = await tryRemove(paths.installAppImagePath);
   const removedDesktop = await tryRemove(paths.installDesktopFilePath);
@@ -1044,17 +1112,36 @@ export async function uninstallPackedLinuxApp(config: ToolPackConfig): Promise<L
   };
 }
 
+export type LinuxHeadlessUninstallResult = {
+  launcherPath: string;
+  namespace: string;
+  removed: "ok" | "already-removed";
+  stop: LinuxStopResult;
+};
+
+export async function uninstallPackedLinuxHeadless(
+  config: ToolPackConfig,
+): Promise<LinuxHeadlessUninstallResult> {
+  const stop = await stopPackedLinuxHeadless(config);
+  const launcherPath = headlessLauncherPath(config);
+  assertLinuxStopComplete(stop, "uninstall");
+
+  return {
+    launcherPath,
+    namespace: config.namespace,
+    removed: await tryRemove(launcherPath),
+    stop,
+  };
+}
+
 export type LinuxCleanupResult = {
   namespace: string;
   outputRoot: string;
   removedOutputRoot: boolean;
   removedRuntimeNamespaceRoot: boolean;
   runtimeNamespaceRoot: string;
-  // True when stopPackedLinuxApp returned "partial" or "unmanaged" -- the
-  // output and runtime namespace roots may contain files held open by a
-  // surviving process tree, so we leave them in place rather than yanking
-  // SQLite WAL files / log handles / IPC sockets out from under it.
-  // Both removed* flags will be false in this case.
+  // Headless cleanup leaves the namespace intact when a desktop-mode owner is
+  // still active; a partial stop itself fails before this result is produced.
   skipped: boolean;
   stop: LinuxStopResult;
 };
@@ -1093,52 +1180,8 @@ export type LinuxHeadlessStartResult = {
   logPath: string;
   namespace: string;
   pid: number;
-  status: WebRootIdentity;
+  status: DesktopStatusSnapshot;
 };
-
-type WebRootIdentity = {
-  namespace: string;
-  pid: number;
-  url: string;
-  startedAt: string;
-  version: 1;
-};
-
-function webIdentityPath(config: ToolPackConfig): string {
-  return join(config.roots.runtime.namespaceRoot, "runtime", "web-root.json");
-}
-
-function isValidWebIdentity(
-  identity: unknown,
-  namespace: string,
-  pid: number,
-): identity is WebRootIdentity {
-  if (typeof identity !== "object" || identity == null) return false;
-  const obj = identity as Record<string, unknown>;
-  return (
-    obj.version === 1 &&
-    obj.namespace === namespace &&
-    obj.pid === pid &&
-    typeof obj.url === "string" &&
-    obj.url.length > 0
-  );
-}
-
-async function waitForWebIdentity(config: ToolPackConfig, childPid: number, timeoutMs: number): Promise<WebRootIdentity | null> {
-  const path = webIdentityPath(config);
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const content = await readFile(path, "utf8");
-      const identity = JSON.parse(content);
-      if (isValidWebIdentity(identity, config.namespace, childPid)) return identity;
-    } catch {
-      // File doesn't exist yet or invalid JSON
-    }
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  return null;
-}
 
 export async function installPackedLinuxHeadless(config: ToolPackConfig): Promise<LinuxHeadlessInstallResult> {
   const paths = resolveLinuxPaths(config);
@@ -1168,7 +1211,7 @@ export async function installPackedLinuxHeadless(config: ToolPackConfig): Promis
   const script = [
     "#!/bin/sh",
     `# Open Design headless launcher — namespace: ${config.namespace}`,
-    `OD_NAMESPACE=${JSON.stringify(config.namespace)} OD_DATA_DIR=${JSON.stringify(dataDir)} OD_RESOURCE_ROOT=${JSON.stringify(paths.resourceRoot)} exec ${JSON.stringify(nodePath)} ${JSON.stringify(entryPath)} "$@"`,
+    `OD_PACKAGED_NAMESPACE=${JSON.stringify(config.namespace)} OD_DATA_DIR=${JSON.stringify(dataDir)} OD_RESOURCE_ROOT=${JSON.stringify(paths.resourceRoot)} exec ${JSON.stringify(nodePath)} ${JSON.stringify(entryPath)} "$@"`,
   ].join("\n") + "\n";
 
   await writeFile(launcherPath, script, { encoding: "utf8", mode: 0o755 });
@@ -1176,8 +1219,6 @@ export async function installPackedLinuxHeadless(config: ToolPackConfig): Promis
   return { launcherPath, namespace: config.namespace };
 }
 
-// Waits up to 35s for the desktop identity marker, then up to 60s for the
-// web identity (95s total).
 export async function startPackedLinuxHeadless(config: ToolPackConfig): Promise<LinuxHeadlessStartResult> {
   const paths = resolveLinuxPaths(config);
   const entryPath = resolveHeadlessEntryPath(paths);
@@ -1194,49 +1235,42 @@ export async function startPackedLinuxHeadless(config: ToolPackConfig): Promise<
   await mkdir(dirname(logPath), { recursive: true });
   await writeFile(logPath, "", "utf8");
 
-  // Remove stale identity markers from a previous run so waitForMarker and
-  // waitForWebIdentity below wait for the newly spawned process.
-  await rm(desktopIdentityPath(config), { force: true }).catch(() => undefined);
-  await rm(webIdentityPath(config), { force: true }).catch(() => undefined);
-
-  // Open the log file so stdout/stderr from the headless process are captured.
+  const stamp = linuxStamp(config, { mode: "headless" });
+  const launchStamps = [
+    stamp,
+    linuxStamp(config, { mode: "headless", source: SIDECAR_SOURCES.PACKAGED }),
+  ];
   const logHandle = await open(logPath, "a");
   let child: { pid: number };
   try {
-    child = await spawnBackgroundProcess({
+    const convergence = await convergeSidecarLaunch({
       args: [entryPath],
       command: nodeCommand,
       cwd: dirname(entryPath),
       env: {
         ...process.env,
-        // Bake in the namespace so headless uses the same namespace as the
-        // tools-pack config regardless of the caller's environment.
-        OD_NAMESPACE: config.namespace,
-        // Point the headless data root at the tools-pack runtime directory so
-        // the identity marker is written to the path this function polls.
-        // headless.ts computes: join(OD_DATA_DIR, "namespaces") which must
-        // equal config.roots.runtime.namespaceBaseRoot.
+        OD_PACKAGED_NAMESPACE: config.namespace,
         OD_DATA_DIR: dirname(config.roots.runtime.namespaceBaseRoot),
         OD_RESOURCE_ROOT: paths.resourceRoot,
       },
       logFd: logHandle.fd,
-    });
+      resources: {
+        dataRoot: join(config.roots.runtime.namespaceRoot, "data"),
+        ownerPid: null,
+        port: 0,
+        runtimeRoot: join(config.roots.runtime.namespaceRoot, "runtime"),
+      },
+      stamp,
+    }, { ownerStamps: launchStamps, timeoutMs: 95_000 });
+    child = { pid: convergence.description.resources.pid };
   } finally {
-    // Close the parent-side handle; the child has already inherited the fd.
     await logHandle.close().catch(() => undefined);
   }
 
-  const markerPath = desktopIdentityPath(config);
-  const ready = await waitForMarker(markerPath, 35_000);
-  if (!ready) {
-    await teardownOrphanedStart(child.pid).catch(() => undefined);
-    throw new Error(`headless identity marker not written within 35s at ${markerPath}`);
-  }
-
-  const webIdentity = await waitForWebIdentity(config, child.pid, 60_000);
-  if (webIdentity == null) {
-    await teardownOrphanedStart(child.pid).catch(() => undefined);
-    throw new Error(`web-root.json not written within 60s at ${webIdentityPath(config)}`);
+  const active = await waitForLinuxStatus<DesktopStatusSnapshot>(launchStamps, 95_000);
+  if (active == null) {
+    await stopSidecars(launchStamps.map((candidate) => ({ stamp: candidate }))).catch(() => undefined);
+    throw new Error(`headless sidecar did not become ready within 95s for ${config.namespace}`);
   }
 
   return {
@@ -1244,108 +1278,51 @@ export async function startPackedLinuxHeadless(config: ToolPackConfig): Promise<
     logPath,
     namespace: config.namespace,
     pid: child.pid,
-    status: webIdentity,
+    status: active.status,
   };
 }
 
 export async function stopPackedLinuxHeadless(config: ToolPackConfig): Promise<LinuxStopResult> {
-  const { fallback, marker } = await readDesktopRootIdentityMarker(config);
-
-  if (marker == null) {
-    return {
-      fallback,
-      gracefulRequested: false,
-      namespace: config.namespace,
-      remainingPids: [],
-      status: "not-running",
-      stoppedPids: [],
-    };
-  }
-
-  const snapshots = await listProcessSnapshots();
-  const candidate = snapshots.find((s) => s.pid === marker.pid);
-  if (candidate == null) {
-    return {
-      fallback: { ...fallback, reason: "marker-pid-not-running" },
-      gracefulRequested: false,
-      namespace: config.namespace,
-      remainingPids: [],
-      status: "not-running",
-      stoppedPids: [],
-    };
-  }
-
-  // Validate the stamp. Headless writes source=PACKAGED; skip the AppImage
-  // process-command check used by stopPackedLinuxApp since the headless entry
-  // is a plain Node process, not an AppImage.
-  const expectedIpc = resolveAppIpcPath({
-    app: APP_KEYS.DESKTOP,
-    contract: OPEN_DESIGN_SIDECAR_CONTRACT,
-    namespace: config.namespace,
-  });
-  const stampOk =
-    marker.stamp.app === APP_KEYS.DESKTOP &&
-    marker.stamp.mode === SIDECAR_MODES.RUNTIME &&
-    marker.stamp.namespace === config.namespace &&
-    marker.stamp.ipc === expectedIpc &&
-    marker.stamp.source === SIDECAR_SOURCES.PACKAGED;
-
-  if (!stampOk || marker.namespaceRoot !== config.roots.runtime.namespaceRoot) {
-    return {
-      fallback: {
-        ...fallback,
-        marker: { pid: marker.pid, stamp: marker.stamp },
-        processCommand: candidate.command,
-        reason: "marker-validation-failed",
-      },
-      gracefulRequested: false,
-      namespace: config.namespace,
-      remainingPids: [marker.pid],
-      status: "unmanaged",
-      stoppedPids: [],
-    };
-  }
-
-  let gracefulRequested = false;
-  try {
-    await requestJsonIpc(marker.stamp.ipc, { type: SIDECAR_MESSAGES.SHUTDOWN }, { timeoutMs: 1500 });
-    gracefulRequested = true;
-  } catch {
-    gracefulRequested = false;
-  }
-
-  const treePids = collectProcessTreePids(snapshots, [marker.pid]);
-  const result = await stopProcesses(treePids);
-
-  if (result.remainingPids.length === 0) {
-    await rm(desktopIdentityPath(config), { force: true }).catch(() => undefined);
-    await rm(webIdentityPath(config), { force: true }).catch(() => undefined);
-  }
+  const stopped = await stopSidecars(packagedSidecarStopRequests(config, "headless"));
 
   return {
-    gracefulRequested,
+    gracefulRequested: stopped.gracefulAccepted,
     namespace: config.namespace,
-    remainingPids: result.remainingPids,
-    status: result.remainingPids.length === 0 ? "stopped" : "partial",
-    stoppedPids: result.stoppedPids,
+    remainingPids: stopped.remainingPids,
+    status: stopped.remainingPids.length > 0 ? "partial" : stopped.matchedPids.length > 0 ? "stopped" : "not-running",
+    stoppedPids: stopped.stoppedPids,
   };
 }
 
-export async function cleanupPackedLinuxNamespace(config: ToolPackConfig): Promise<LinuxCleanupResult> {
-  const stop = await stopPackedLinuxApp(config);
+export async function cleanupPackedLinuxNamespace(
+  config: ToolPackConfig,
+  options: { headless?: boolean } = {},
+): Promise<LinuxCleanupResult> {
+  const mode = resolveLinuxLifecycleMode(options, "cleanup");
+  const stop = mode === "headless"
+    ? await stopPackedLinuxHeadless(config)
+    : await stopPackedLinuxApp(config);
   const outputRoot = config.roots.output.namespaceRoot;
   const runtimeNamespaceRoot = config.roots.runtime.namespaceRoot;
 
-  if (!isSafeToRemoveInstallFiles(stop)) {
-    return {
-      namespace: config.namespace,
-      outputRoot,
-      removedOutputRoot: false,
-      removedRuntimeNamespaceRoot: false,
-      runtimeNamespaceRoot,
-      skipped: true,
-      stop,
-    };
+  assertLinuxStopComplete(stop, "cleanup");
+
+  if (mode === "headless") {
+    const desktopRunning = await Promise.all([
+      findSidecarProcesses(linuxStamp(config)),
+      findSidecarProcesses(linuxStamp(config, { source: SIDECAR_SOURCES.PACKAGED })),
+    ]);
+    if (desktopRunning.some((processes) => processes.length > 0)) {
+      return {
+        namespace: config.namespace,
+        outputRoot,
+        removedOutputRoot: false,
+        removedRuntimeNamespaceRoot: false,
+        runtimeNamespaceRoot,
+        skipped: true,
+        stop,
+      };
+    }
   }
 
   const hadOutput = await pathExists(outputRoot);

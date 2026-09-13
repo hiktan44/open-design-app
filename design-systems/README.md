@@ -1,97 +1,144 @@
 # Design Systems
 
-Each subfolder is a portable design system in [`DESIGN.md`](../docs/spec.md)
-format. Pick one in the top-bar **Design system** dropdown and every skill
-will read it as part of its system prompt.
+Each subfolder is a portable design-system package. Selecting one from the
+Design System surface or a supported project-creation workflow composes its
+design context into the agent prompt.
 
-## What's bundled
+The bundled catalog currently contains **151 packages**. Every bundled package
+has the same minimum machine-readable shape:
 
-- **`default/`** — Neutral Modern. Hand-authored starter for the OD spec.
-- **`warm-editorial/`** — Warm Editorial. Hand-authored serif starter.
-- **`atelier-zero/`** — Atelier Zero. Hand-authored magazine-grade
-  collage system: warm paper canvas, plaster-and-architecture imagery,
-  oversized italic-mixed display type, Roman-numeral section markers,
-  side rails of rotated micro-text, coordinate annotations, single
-  coral accent. Pairs with [`skills/open-design-landing/`](../skills/open-design-landing/)
-  and [`skills/open-design-landing-deck/`](../skills/open-design-landing-deck/)
-  for the canonical landing-page and slide-deck renderings.
-- **`kami/`** — 紙 / 纸. Editorial paper system distilled from
-  [`tw93/kami`](https://github.com/tw93/kami) (MIT). Warm parchment canvas,
-  ink-blue accent, serif at one weight, no italic, no cool grays. Pairs with
-  the [`templates/kami-deck.html`](../templates/kami-deck.html) starter for
-  slide work.
-- **57 design skills**, sourced from
-  [`bergside/awesome-design-skills`](https://github.com/bergside/awesome-design-skills)
-  and added directly as normalized 9-section `DESIGN.md` files.
-- **70 product systems**, imported from
-  [`VoltAgent/awesome-design-md`](https://github.com/VoltAgent/awesome-design-md)
-  (the [`getdesign@latest`](https://www.npmjs.com/package/getdesign) npm
-  package, MIT-licensed). One folder per brand:
-
-  | Category | Systems |
-  |---|---|
-  | AI & LLM | claude · cohere · elevenlabs · minimax · mistral-ai · ollama · opencode-ai · replicate · runwayml · together-ai · voltagent · x-ai |
-  | Developer Tools | cursor · expo · lovable · raycast · superhuman · vercel · warp |
-  | Productivity & SaaS | cal · intercom · linear-app · mintlify · notion · resend · zapier |
-  | Backend & Data | clickhouse · composio · hashicorp · mongodb · posthog · sanity · sentry · supabase |
-  | Design & Creative | airtable · clay · figma · framer · miro · webflow |
-  | Fintech & Crypto | binance · coinbase · kraken · mastercard · revolut · stripe · wise |
-  | E-Commerce & Retail | airbnb · meta · nike · shopify · starbucks |
-  | Media & Consumer | apple · ibm · nvidia · pinterest · playstation · spacex · spotify · theverge · uber · vodafone · wired · xiaohongshu |
-  | Automotive | bmw · bugatti · ferrari · lamborghini · renault · tesla |
-
-Folders use ASCII slugs — dotted brands are normalized (`linear.app` →
-`linear-app`, `x.ai` → `x-ai`, etc.).
-
-## File shape
-
-The first H1 is the title shown in the picker. The line immediately after
-the H1 is parsed for `> Category: <name>` and used to group the dropdown:
-
-```markdown
-# Design System Inspired by Cohere
-
-> Category: AI & LLM
-> Enterprise AI platform. Vibrant gradients, data-rich dashboard aesthetic.
-
-## 1. Visual Theme & Atmosphere
-...
+```text
+design-systems/<slug>/
+├── manifest.json
+├── DESIGN.md
+└── tokens.css
 ```
 
-Both the boilerplate prefix `Design System Inspired by ` and the
-`> Category: ...` line are stripped from the dropdown label and the summary
-preview at runtime — they're only metadata.
+- `manifest.json` owns stable discovery metadata, provenance, and declared
+  package paths.
+- `DESIGN.md` is the canonical design prose for agents.
+- `tokens.css` is the canonical compiled semantic-token stylesheet.
 
-## Adding your own
+The daemon still discovers legacy folders that contain only `DESIGN.md`, so
+older and user-installed content remains compatible. That fallback is not the
+authoring target for new repository content.
 
-Drop a new folder containing a `DESIGN.md` and it shows up on next refresh.
-Add a `> Category: <Group>` line to slot it under an existing group, or use
-any new label and it lands at the bottom of the dropdown.
+## Manifest and catalog behavior
 
-## Refreshing the bundled set
+The v1 manifest uses fixed canonical file names:
 
-The 70 product systems are pulled from the upstream npm package. To re-sync
-to the latest hashes:
-
-```bash
-curl -sL $(npm view getdesign dist.tarball) -o /tmp/getdesign.tgz
-tar -xzf /tmp/getdesign.tgz -C /tmp
-node --experimental-strip-types scripts/sync-design-systems.ts
+```json
+{
+  "schemaVersion": "od-design-system-project/v1",
+  "id": "acme",
+  "name": "Acme",
+  "category": "Productivity & SaaS",
+  "description": "A concise English catalog summary.",
+  "source": {
+    "type": "bundled",
+    "origin": "OpenDesign curated bundled fixture"
+  },
+  "files": {
+    "design": "DESIGN.md",
+    "tokens": "tokens.css"
+  }
+}
 ```
 
-For now, the original importer lives at the top of the
-[`excessive-climb` branch](../) — re-run it against a fresh tarball.
+- The folder slug and `manifest.id` must match and use normalized ASCII.
+- `files.design` is `DESIGN.md`; `files.tokens` is `tokens.css`.
+- `name`, `category`, and `description` are the primary packaged-catalog copy.
+- `source` records package provenance.
+- Every declared path must be safe, relative, and present.
+
+At runtime, manifest metadata takes precedence over the legacy Markdown H1 and
+`> Category:` conventions. Those Markdown conventions remain readable fallback
+metadata for legacy packages. The exact precedence and authoring rules live in
+[`docs/design-systems.md`](../docs/design-systems.md).
+
+The catalog is scanned on every `/api/design-systems` request. After changing a
+package, refresh the Design System surface; a daemon restart is not required.
+
+## Rich package files
+
+Packages may declare the richer files below through their corresponding
+manifest fields:
+
+```text
+USAGE.md                     agent-facing read order and usage guide
+components.html              standalone component fixture
+components.manifest.json     derived component/token index
+design-tokens.json           derived Design Tokens JSON
+tailwind-v4.css               derived Tailwind v4 mapping
+assets/                       optional static assets
+fonts/                        optional webfonts
+preview/                      indexed preview pages
+source/                       importer evidence, snippets, and token reports
+```
+
+These fields are active runtime inputs, not structural placeholders. Prompt
+composition consumes `USAGE.md`, `tokens.css`, component information, import
+mode, craft bindings, and a manifest-derived pull index when present. Package
+and static-file APIs expose declared preview/source files without widening the
+filesystem boundary.
+
+Derived files are caches rather than competing sources of truth:
+
+- `components.manifest.json` is derived from `components.html` and `tokens.css`.
+- `design-tokens.json` is derived from the token-contract report and must agree
+  with `tokens.css`.
+- `tailwind-v4.css` is derived from `tokens.css`.
+
+The manifest and package-quality guards validate the declared paths, rich
+profile, derived-file parity, token contract, component fixture, source
+evidence, and preview coverage. Read
+[`_schema/AGENTS.md`](_schema/AGENTS.md) before editing those contracts.
+
+## Writing a package
+
+`DESIGN.md` does not use a fixed nine-section template. The package-quality
+guard requires at least seven substantive H2 headings for migrated packages,
+without prescribing their names, order, or numbering. Use headings that fit the
+actual system and keep their decisions synchronized with `tokens.css`.
+
+For new repository content:
+
+1. Create the three required files and keep the folder slug equal to
+   `manifest.id`.
+2. Record useful catalog metadata and source provenance in `manifest.json`.
+3. Write at least seven substantive H2 sections in `DESIGN.md`.
+4. Bind the shared semantic-token contract in `tokens.css`.
+5. Add rich package files when the system needs components, previews, assets,
+   fonts, or source evidence.
+6. Run `pnpm guard` and `pnpm typecheck`.
+
+The complete authoring guide and review checklist are in
+[`docs/design-systems.md`](../docs/design-systems.md).
+
+## Importing and refreshing
+
+The product exposes local-folder, GitHub, and shadcn import flows in both the UI
+and the `od design-systems import-*` CLI. Those importers write the package
+contract rather than a standalone `DESIGN.md`.
+
+[`scripts/sync-design-systems.ts`](../scripts/sync-design-systems.ts) remains
+the repository-owned bulk synchronizer for upstream-derived catalog content.
+Do not copy the retired branch-only importer or manual tarball recipe from old
+plans; use the checked-in script and current import surfaces.
 
 ## Attribution
 
-The 70 product systems are sourced from
-[`VoltAgent/awesome-design-md`](https://github.com/VoltAgent/awesome-design-md)
-(MIT, © VoltAgent contributors). They are aesthetic *inspirations* — none
-of them are official assets of the brands they reference.
+Package-level `manifest.source`, evidence files, and local license files are the
+source of truth for provenance. Major upstream sources represented in the
+catalog include:
 
-The `kami/` system adapts tokens, type rules, and the "ten invariants" from
-[`tw93/kami`](https://github.com/tw93/kami) (MIT, © Tw93 and contributors),
-a Claude skill for typesetting professional documents and slide decks.
+- [`VoltAgent/awesome-design-md`](https://github.com/VoltAgent/awesome-design-md)
+  (MIT) for upstream-derived product systems.
+- [`bergside/awesome-design-skills`](https://github.com/bergside/awesome-design-skills)
+  for normalized design-skill systems.
+- [`tw93/kami`](https://github.com/tw93/kami) (MIT) for the `kami` package.
+- [`Tom-Opencart/tom-modern-html-style-rule`](https://github.com/Tom-Opencart/tom-modern-html-style-rule)
+  (MIT) for the `tom-modern` package.
 
-The 57 design skills are sourced from
-[`bergside/awesome-design-skills`](https://github.com/bergside/awesome-design-skills).
+Brand-referencing packages are aesthetic inspirations, not official assets of
+the brands they reference.

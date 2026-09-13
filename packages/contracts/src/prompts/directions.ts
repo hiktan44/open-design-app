@@ -1,12 +1,12 @@
 /**
  * Built-in design direction library.
  *
- * Distilled from huashu-design's "5 schools × 20 philosophies" idea: when
- * the user hasn't specified a brand and selected "Pick a direction for me"
- * in the discovery form, the agent emits a *second* `<question-form>` whose
- * radio options are these 5 schools. Each school carries a concrete spec —
- * fonts, palette in OKLch, mood keywords, real-world references — that the
- * agent then encodes into the active CSS `:root` tokens before generating.
+ * Distilled from huashu-design's "5 schools × 20 philosophies" idea. The
+ * library gives the agent concrete visual references to infer from by default.
+ * When the user explicitly asks to compare visual directions, it can also
+ * render these schools as `<question-form>` choices. Each school carries a
+ * concrete spec — fonts, palette in OKLch, mood keywords, real-world
+ * references — that the agent encodes into active CSS `:root` tokens.
  *
  * The library has TWO purposes:
  *
@@ -27,7 +27,13 @@ export interface DesignDirection {
   id: string;
   /** Short user-facing label, shown in the radio. ≤ 56 chars including the dash list. */
   label: string;
-  /** One-paragraph mood description shown to the user as `help`. */
+  /**
+   * One-paragraph mood description. Rendered as the `mood` blurb on a
+   * `direction-cards` option — NOT as a per-question help string: that field
+   * is dormant (OPEND-2707, see `FormQuestion.help` in
+   * `apps/web/src/artifacts/question-form.ts`), and this renderer has had no
+   * call site since the visual-style question was retired (OPEND-2760).
+   */
   mood: string;
   /** References / exemplars — real magazines, products, designers. */
   references: string[];
@@ -55,31 +61,31 @@ export const DESIGN_DIRECTIONS: DesignDirection[] = [
     id: 'editorial-monocle',
     label: 'Editorial — Monocle / FT magazine',
     mood:
-      'Print-magazine feel. Generous whitespace, large serif headlines, restrained palette of off-white paper + ink + a single warm accent. Confident, quietly intelligent.',
+      'Print-magazine feel for explicitly editorial or publishing briefs. Generous whitespace, large serif headlines, restrained palette of neutral paper + ink + a single brand-justified accent. Do not use this as the default for commerce, SaaS, dashboards, or product utilities.',
     references: ['Monocle', 'The Financial Times Weekend', 'NYT Magazine', 'It\'s Nice That'],
     displayFont: "'Iowan Old Style', 'Charter', Georgia, serif",
     bodyFont:
       "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
     palette: {
-      bg:      'oklch(97% 0.012 80)',     // off-white paper
-      surface: 'oklch(99% 0.005 80)',
-      fg:      'oklch(20% 0.02 60)',      // ink
-      muted:   'oklch(48% 0.015 60)',
-      border:  'oklch(89% 0.012 80)',
-      accent:  'oklch(58% 0.16 35)',      // warm rust / clay
+      bg:      'oklch(98% 0.004 95)',     // neutral paper, not beige wash
+      surface: 'oklch(100% 0.002 95)',
+      fg:      'oklch(20% 0.018 70)',      // ink
+      muted:   'oklch(48% 0.012 70)',
+      border:  'oklch(90% 0.006 95)',
+      accent:  'oklch(52% 0.10 28)',      // restrained editorial red; override from brand when available
     },
     posture: [
       'serif display, sans body, mono for metadata only',
       'no shadows, no rounded cards — borders + whitespace do the work',
       'one decisive image, cropped only at the bottom',
-      'kicker / eyebrow in mono uppercase, one accent color, used at most twice',
+      'kicker / eyebrow in mono uppercase, one accent color, used at most twice; never create peach/pink/orange-beige page washes unless the brand/reference requires them',
     ],
   },
   {
     id: 'modern-minimal',
     label: 'Modern minimal — Linear / Vercel',
     mood:
-      'Quiet, precise, software-native. System fonts, near-greyscale palette, a single saturated accent. The chrome disappears so content is the only thing that registers.',
+      'Quiet, precise, software-native. System fonts, crisp neutral foundations, and a small but visible product palette (primary + secondary + status/accent) so the interface feels shipped rather than greyscale. The chrome stays restrained while interaction states, illustrations, charts, and product moments carry color.',
     references: ['Linear', 'Vercel', 'Notion 2024', 'Stripe docs'],
     displayFont:
       "-apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif",
@@ -97,34 +103,34 @@ export const DESIGN_DIRECTIONS: DesignDirection[] = [
       'tight letter-spacing on display sizes (-0.02em)',
       'hairline borders only, no shadows except dropdowns/modals',
       'mono numerics with `font-variant-numeric: tabular-nums`',
-      'sticky frosted nav, content-led layouts (no hero illustrations)',
-      'one accent: links + primary CTA, nothing else',
+      'sticky frosted nav, content-led layouts with one product illustration, device mockup, or data visualization when it clarifies the product',
+      'controlled color system: primary action color + one secondary signal + status colors; avoid monochrome/unstyled outputs, but never flood every card with gradients',
     ],
   },
   {
-    id: 'warm-soft',
-    label: 'Warm & soft — Stripe pre-2020 / Headspace',
+    id: 'human-approachable',
+    label: 'Human / approachable — Airbnb / Duolingo systems',
     mood:
-      'Cream backgrounds, soft accent, gentle radii. Reads like a thoughtful product magazine — friendly without being cute. Good for fintech, wellness, indie SaaS.',
-    references: ['Stripe pre-2020', 'Headspace', 'Substack', 'Mercury'],
+      'Friendly and tactile without the generic cozy canvas. Uses a clean neutral background, product-led color system, generous radii, and clear hierarchy. Good for consumer tools, marketplaces, wellness, education, translation, AI assistants, and indie SaaS when the brand has not supplied a palette.',
+    references: ['Airbnb', 'Duolingo product surfaces', 'Miro', 'Mercury'],
     displayFont:
-      "'Tiempos Headline', 'Newsreader', 'Iowan Old Style', Georgia, serif",
+      "'Söhne', 'Avenir Next', -apple-system, BlinkMacSystemFont, system-ui, sans-serif",
     bodyFont:
-      "'Söhne', -apple-system, BlinkMacSystemFont, system-ui, sans-serif",
+      "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif",
     palette: {
-      bg:      'oklch(97% 0.018 70)',     // warm cream
-      surface: 'oklch(99% 0.008 70)',
-      fg:      'oklch(22% 0.02 50)',
-      muted:   'oklch(50% 0.018 50)',
-      border:  'oklch(90% 0.014 70)',
-      accent:  'oklch(64% 0.13 28)',      // terracotta
+      bg:      'oklch(98% 0.004 240)',
+      surface: 'oklch(100% 0 0)',
+      fg:      'oklch(20% 0.02 240)',
+      muted:   'oklch(50% 0.018 240)',
+      border:  'oklch(90% 0.006 240)',
+      accent:  'oklch(56% 0.12 170)',     // brand-safe teal
     },
     posture: [
-      'serif display, soft sans body',
-      'gentle radii (12–16px), no hard 0px corners on content cards',
-      'single accent used for primary CTA + one editorial flourish (a quote mark, a stat)',
-      'soft inner glow on hero cards rather than drop shadows',
-      'avoid icons; use real screenshots / photographs / illustrations',
+      'sans display with strong weight contrast, system body for readability',
+      'comfortable radii (12–18px) paired with crisp grid alignment',
+      'primary action color plus a secondary/domain accent and clear status colors; use color to separate panels, states, and product moments',
+      'subtle elevation only on interactive cards; tasteful gradients/glows are allowed for hero/device/product moments, never as a full-page beige/pastel wash',
+      'avoid generic pastel/beige gradients; use real product screenshots, data, or labelled placeholders',
     ],
   },
   {
@@ -165,7 +171,7 @@ export const DESIGN_DIRECTIONS: DesignDirection[] = [
     bodyFont:
       "ui-monospace, 'IBM Plex Mono', 'JetBrains Mono', Menlo, monospace",
     palette: {
-      bg:      'oklch(96% 0.004 100)',    // off-white printer paper
+      bg:      'oklch(98% 0.004 240)',   // neutral printer paper
       surface: 'oklch(100% 0 0)',
       fg:      'oklch(15% 0.02 100)',
       muted:   'oklch(40% 0.02 100)',
@@ -184,6 +190,17 @@ export const DESIGN_DIRECTIONS: DesignDirection[] = [
 ];
 
 /**
+ * ⚠️ **休眠件(T69,2026-09-07)** —— 说明书在
+ * `apps/web/src/runtime/visual-style-catalog.ts` 文件头。
+ *
+ * 这个函数**在本次改动之前就已经没有任何调用点**(全仓搜 `renderDirectionFormBody`
+ * 只搜得到定义),设计风格选择题从提示词整题下线之后更不会有。留着不删是因为
+ * 产品明说「后续可能要找回」,而它是那条路上现成的一块。
+ *
+ * ⚠️ 同文件里**读答案**那一半(`od tools directions` / `catalogue identity` 那段)
+ * **是活的,别一起清掉**:旧表单交上来的 `value` / `foundation` / `guidance`
+ * 仍要读得懂。撤的是**发问**,不是**读答案**。
+ *
  * Render the direction-picker form body for emission as a `<question-form>`.
  * Uses the `direction-cards` question type so the UI renders each option
  * as a rich card (palette swatches + type sample + mood blurb + refs)
@@ -241,9 +258,9 @@ export function renderDirectionFormBody(): string {
  */
 export function renderDirectionSpecBlock(): string {
   const lines: string[] = [
-    '## Direction library — bind into `:root` when the user picks one',
+    '## Direction library — infer and bind by default',
     '',
-    'Each direction below carries a CSS-ready palette (OKLch values) and font stacks. When the user selects one in the direction-form, replace the seed template\'s `:root` block with that direction\'s palette and font stacks **verbatim** — do not improvise. Posture cues describe how that direction *behaves* (border weight, radius, accent budget); honour them in the layout choices.',
+    'Each direction below carries a CSS-ready palette (OKLch values) and font stacks. Infer the best match from the brief and known context, then bind it without asking. If the user explicitly requested direction comparison and selected one in a Host-owned direction form, its answer carries a stable Host `value`, a `foundation` id from this library, and visual `guidance`. Bind the named foundation from this library, then apply the guidance as the selected refinement; the Host value is catalogue identity and must not be passed to `od tools directions`. Replace the seed template\'s `:root` block with the chosen foundation\'s palette and font stacks **verbatim** — do not improvise. Posture cues describe how that direction *behaves* (border weight, radius, accent budget); honour them in the layout choices.',
     '',
   ];
   for (const d of DESIGN_DIRECTIONS) {
@@ -277,7 +294,7 @@ export function renderDirectionSpecBlock(): string {
   return lines.join('\n');
 }
 
-/** Look up a direction by its `label` (what the user sees in the form). */
+/** Look up an inferred or user-selected direction by id or label. */
 export function findDirectionByLabel(label: string): DesignDirection | undefined {
   const trimmed = label.trim();
   return DESIGN_DIRECTIONS.find((d) => d.label === trimmed || d.id === trimmed);

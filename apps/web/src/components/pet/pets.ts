@@ -1,4 +1,4 @@
-import type { AppConfig, PetAtlasLayout, PetAtlasRowDef, PetCustom, PetConfig } from '../../types';
+import type { AppConfig, CodexPetSummary, PetAtlasLayout, PetAtlasRowDef, PetCustom, PetConfig } from '../../types';
 import {
   codexPetSpritesheetUrl,
   fetchCodexPets,
@@ -91,7 +91,7 @@ function resolveCustomPet(c: PetCustom): ResolvedPet {
     id: CUSTOM_PET_ID,
     name: c.name?.trim() || 'Buddy',
     glyph: c.glyph?.trim() || '🦄',
-    accent: c.accent?.trim() || '#c96442',
+    accent: c.accent?.trim() || '#87ea5c',
     greeting: c.greeting?.trim() || 'Hi! I am here whenever you need me.',
     // Custom pets get the gentle float animation by default. We could
     // expose this in the editor later; today's UX keeps the picker
@@ -242,7 +242,7 @@ export function pickAmbientRow(
 
 // A short pool of "ambient" prompts that the overlay rotates through on
 // hover so the speech bubble feels alive after the initial greeting.
-// Keep these brand-neutral and product-relevant to Open Design.
+// Keep these brand-neutral and product-relevant to OpenDesign.
 export function ambientLines(name: string): string[] {
   return [
     `${name}: nudge me when you want a fresh idea.`,
@@ -256,7 +256,7 @@ export function defaultCustomPet(): PetCustom {
   return {
     name: 'Buddy',
     glyph: '🦄',
-    accent: '#c96442',
+    accent: '#87ea5c',
     greeting: 'Hi! I am here whenever you need me.',
   };
 }
@@ -321,6 +321,24 @@ export async function migrateCustomPetAtlas(
   } catch {
     return null;
   }
+}
+
+export async function prepareCodexPetCustom(pet: CodexPetSummary): Promise<PetCustom> {
+  const resp = await fetch(codexPetSpritesheetUrl(pet));
+  if (!resp.ok) throw new Error('Could not download that pet.');
+  const blob = await resp.blob();
+  const dataUrl = await blobToDataUrl(blob);
+  const prepared = await prepareCodexAtlas(dataUrl);
+  return {
+    name: pet.displayName || pet.id,
+    glyph: '🦄',
+    accent: '#87ea5c',
+    greeting: pet.description || `Hi! I am ${pet.displayName || pet.id}.`,
+    imageUrl: prepared.dataUrl,
+    frames: 1,
+    fps: prepared.layout.rowsDef[0]?.fps ?? 6,
+    atlas: prepared.layout,
+  };
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {

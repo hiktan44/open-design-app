@@ -1,8 +1,14 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import type { ToolPackConfig } from "../config.js";
-import { macResources } from "../resources.js";
+import type { ToolPackConfig } from "../config/index.js";
+import { domToPptxBundleResource } from "../dom-to-pptx-resource.js";
+import {
+  assertNodePtyRuntime,
+  resolveNodePtyRuntimeArch,
+} from "../node-pty-runtime.js";
+import { macResources } from "../resources/index.js";
+import { electronBuilderVersionForAppVersion } from "../versioning/index.js";
 import { execFileAsync } from "./commands.js";
 import {
   ELECTRON_BUILDER_ASAR,
@@ -13,6 +19,7 @@ import {
   WEB_STANDALONE_RESOURCE_NAME,
 } from "./constants.js";
 import { pathExists } from "./fs.js";
+import { resolveMacInstallIdentity } from "./identity.js";
 import { readPackagedVersion } from "./manifest.js";
 import { sanitizeNamespace } from "./paths.js";
 import type { ElectronBuilderTarget, MacBuildOutput, MacPaths } from "./types.js";
@@ -42,6 +49,7 @@ async function writeWebStandaloneHookConfig(config: ToolPackConfig, paths: MacPa
     `${JSON.stringify(
       {
         auditReportPath: paths.webStandaloneHookAuditPath,
+        hyperframesRuntimeSourceRoot: paths.assembledAppRoot,
         pruneCopiedSharp: true,
         pruneRootNext: true,
         pruneRootSharp: true,
@@ -80,15 +88,17 @@ export async function runElectronBuilder(
   targets: ElectronBuilderTarget[],
 ): Promise<void> {
   const namespaceToken = sanitizeNamespace(config.namespace);
+  const identity = resolveMacInstallIdentity(config);
   const packagedVersion = await readPackagedVersion(config);
+  const packageVersion = electronBuilderVersionForAppVersion(packagedVersion);
   const webStandaloneHookConfigPath = config.webOutputMode === "standalone"
     ? await writeWebStandaloneHookConfig(config, paths)
     : null;
   const builderConfig = {
-    appId: "io.open-design.desktop",
+    appId: identity.appId,
     artifactName: `${PRODUCT_NAME}-${namespaceToken}.\${ext}`,
     afterPack: webStandaloneHookConfigPath == null ? undefined : macResources.webStandaloneAfterPackHook,
-    afterSign: config.signed ? macResources.notarizeHook : undefined,
+    afterSign: config.signed && config.macNotarize ? macResources.notarizeHook : undefined,
     asar: ELECTRON_BUILDER_ASAR,
     buildDependenciesFromSource: false,
     compression: config.macCompression,
@@ -98,20 +108,22 @@ export async function runElectronBuilder(
     dmg: {
       icon: macResources.icon,
       iconSize: 96,
-      title: `${PRODUCT_NAME}-${namespaceToken}`,
+      title: identity.installerTitle,
     },
-    electronDist: config.electronDistPath,
     electronVersion: config.electronVersion,
-    executableName: PRODUCT_NAME,
+    executableName: identity.executableName,
     extraMetadata: {
       main: "./main.cjs",
       name: "open-design-packaged-app",
-      productName: PRODUCT_NAME,
-      version: packagedVersion,
+      productName: identity.productName,
+      version: packageVersion,
     },
     extraResources: [
       { from: paths.resourceRoot, to: "open-design" },
       { from: paths.packagedConfigPath, to: "open-design-config.json" },
+      // Vendored dom-to-pptx browser bundle for editable PPTX export. The desktop
+      // main reads it from process.resourcesPath at runtime.
+      domToPptxBundleResource(config),
     ],
     files: [...ELECTRON_BUILDER_FILE_PATTERNS],
     mac: {
@@ -123,12 +135,24 @@ export async function runElectronBuilder(
       hardenedRuntime: config.signed,
       icon: macResources.icon,
       identity: config.signed ? undefined : null,
-      notarize: false,
+      notarize: config.macNotarize ? undefined : false,
       target: targets,
     },
+    // Register the workspace-invite deeplink scheme so macOS routes
+    // `opendesign://workspace/invite/continue?...` to this app (electron-builder
+    // writes it into Info.plist CFBundleURLTypes; a runtime
+    // setAsDefaultProtocolClient alone is unreliable on macOS). The scheme string
+    // must match INVITE_DEEPLINK_SCHEME in
+    // apps/desktop/src/main/invite-deeplink-core.ts.
+    protocols: [
+      {
+        name: `${PRODUCT_NAME} Invite`,
+        schemes: ["opendesign"],
+      },
+    ],
     nodeGypRebuild: false,
     npmRebuild: false,
-    productName: PRODUCT_NAME,
+    productName: identity.productName,
     icon: macResources.icon,
     publish: [
       {
@@ -157,5 +181,10 @@ export async function runElectronBuilder(
       ...(config.signed ? {} : { CSC_IDENTITY_AUTO_DISCOVERY: "false" }),
       ...(webStandaloneHookConfigPath == null ? {} : { [WEB_STANDALONE_HOOK_CONFIG_ENV]: webStandaloneHookConfigPath }),
     },
+  });
+  await assertNodePtyRuntime({
+    appRoot: join(paths.appPath, "Contents", "Resources", "app"),
+    arch: resolveNodePtyRuntimeArch(process.arch),
+    platform: "darwin",
   });
 }
