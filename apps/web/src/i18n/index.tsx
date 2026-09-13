@@ -164,10 +164,6 @@ export function resolveSystemLocale(languages: readonly string[]): Locale | null
   }
   return null;
 }
-    if (baseMatch && supported.includes(baseMatch)) return baseMatch;
-  }
-  return null;
-}
 
 /**
  * A `t()` bound to an explicit content-language tag rather than the app UI
@@ -299,28 +295,32 @@ export function isRtlLocale(locale: Locale): boolean {
 }
 
 export function I18nProvider({ initial, children }: ProviderProps) {
-  const [locale, setLocaleState] = useState<Locale>('en');
-  const [initialized, setInitialized] = useState(false);
+  const [locale, setLocaleState] = useState<Locale>(() => initial ?? detectInitialLocale());
+  const [initialized, setInitialized] = useState(true);
 
-  // Initialize locale with IP-based detection
+  // Background IP-based detection for Turkish users if not explicitly configured
   useEffect(() => {
-    let mounted = true;
-
-    if (initial) {
-      setLocaleState(initial);
-      setInitialized(true);
-    } else {
-      detectInitialLocale().then(detectedLocale => {
-        if (mounted) {
-          setLocaleState(detectedLocale);
-          setInitialized(true);
-        }
-      });
+    if (initial) return;
+    try {
+      const storedSource = window.localStorage.getItem(LS_SOURCE_KEY);
+      if (storedSource === MANUAL_LOCALE_SOURCE) return;
+      const storedUiLang = window.localStorage.getItem('ui_lang');
+      if (storedUiLang) return;
+    } catch {
+      /* ignore */
     }
 
-    return () => {
-      mounted = false;
-    };
+    detectCountry().then((country) => {
+      if (country === 'TR') {
+        setLocaleState('tr');
+        try {
+          window.localStorage.setItem(LS_KEY, 'tr');
+          window.localStorage.setItem('ui_lang', 'tr');
+        } catch {
+          /* ignore */
+        }
+      }
+    }).catch(() => {});
   }, [initial]);
 
   // Keep <html lang="…" dir="…"> in sync so screen readers and CSS hooks
