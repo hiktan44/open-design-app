@@ -7,13 +7,21 @@ WORKDIR /app
 COPY . .
 RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
 RUN pnpm install --frozen-lockfile --ignore-scripts
+RUN pnpm --filter @open-design/release build
+RUN pnpm --filter @open-design/components build
+RUN pnpm --filter @open-design/platform build
+RUN pnpm --filter @open-design/registry-protocol build
 RUN pnpm --filter @open-design/contracts build
 RUN pnpm --filter @open-design/sidecar-proto build
 RUN pnpm --filter @open-design/sidecar build
-RUN pnpm --filter @open-design/platform build
+RUN pnpm --filter @open-design/host build
+RUN pnpm --filter @open-design/diagnostics build
+RUN pnpm --filter @open-design/launcher-proto build
+RUN pnpm --filter @open-design/plugin-runtime build
+RUN pnpm --filter @open-design/agui-adapter build
 RUN pnpm --filter @open-design/daemon build
 RUN OD_WEB_OUTPUT_MODE= pnpm --filter @open-design/web build
-RUN cd node_modules/.pnpm/better-sqlite3@12.9.0/node_modules/better-sqlite3 && npx prebuild-install || npx node-gyp rebuild --release
+RUN pnpm rebuild better-sqlite3
 
 FROM node:24-alpine AS runner
 WORKDIR /app
