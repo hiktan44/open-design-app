@@ -25,9 +25,10 @@ const HOME_ESCAPED_ARGUMENT_PLACEHOLDER_PATTERN =
 const HOME_ARGUMENT_PLACEHOLDER_PATTERN =
   /\{argument\s+name=(?:"([^"]+)"|'([^']+)')\s+default=(?:"([^"]*)"|'([^']*)')[^}]*\}/g;
 
-export type PromptLocaleKind = 'zh' | 'ja' | 'en';
+export type PromptLocaleKind = 'tr' | 'zh' | 'ja' | 'en';
 
 export function promptLocaleKind(locale: Locale): PromptLocaleKind {
+  if (locale === 'tr') return 'tr';
   if (locale === 'zh-CN' || locale === 'zh-TW') return 'zh';
   if (locale === 'ja') return 'ja';
   return 'en';
@@ -48,7 +49,7 @@ export function pluginPresetQuery(
       key.toLowerCase().startsWith(`${language}-`) && typeof value === 'string'
     ));
     if (typeof languageMatch?.[1] === 'string') return languageMatch[1];
-    for (const key of ['zh-CN', 'en', 'default']) {
+    for (const key of ['tr', 'en', 'default', 'zh-CN']) {
       if (typeof localized[key] === 'string') return localized[key];
     }
     const first = Object.values(localized).find((value) => typeof value === 'string');

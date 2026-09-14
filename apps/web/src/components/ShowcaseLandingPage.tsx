@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import styles from './ShowcaseLandingPage.module.css';
 import { GoogleSignInButton } from './GoogleSignInButton';
 import { navigate } from '../router';
+import { DesignShowcaseMarquee } from './whacka-hero/DesignShowcaseMarquee';
 
 interface ShowcaseLandingPageProps {
   onEnterStudio?: () => void;
@@ -459,6 +460,11 @@ export function ShowcaseLandingPage({ onEnterStudio }: ShowcaseLandingPageProps)
           </div>
         </div>
       </header>
+
+      {/* ─────────────────────────────────────────────────────────────
+          Kayan Yazı Sistemi & Kayan Web Sayfası Tasarımları
+          ───────────────────────────────────────────────────────────── */}
+      <DesignShowcaseMarquee onSelectDesign={() => handleStartStudio()} />
 
       {/* ─────────────────────────────────────────────────────────────
           Hero Section with Cosmic Interactive Canvas

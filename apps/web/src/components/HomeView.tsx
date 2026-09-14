@@ -153,6 +153,7 @@ import type { OnboardingEntry } from '../onboarding/onboarding-entry';
 import { AnimatePresence } from 'motion/react';
 import { DeepSeekV4FlashCampaign } from './DeepSeekV4FlashCampaign';
 import type { DeepSeekV4FlashCampaignAudience } from '../campaigns/deepseek-v4-flash';
+import { DesignShowcaseMarquee } from './whacka-hero/DesignShowcaseMarquee';
 
 export interface ActivePlugin {
   record: InstalledPluginRecord;
@@ -3082,6 +3083,14 @@ export function HomeView({
     || stagedFiles.length > 0
   );
 
+  const handleDesignSelect = useCallback((designPrompt: string) => {
+    setPrompt(designPrompt);
+    setPromptEditedByUser(true);
+    inputRef.current?.focus?.();
+    const heroComposerEl = document.querySelector('.home-hero');
+    heroComposerEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
+
   return (
     <div
       className={`home-view${recentProjectsEmpty ? ' home-view--centered' : ''}`}
@@ -3099,6 +3108,11 @@ export function HomeView({
         installationId={deepSeekV4FlashCampaignInstallationId}
       />
       {isActive ? <AppWashKineticGrid clipBottomTo=".home-hero" /> : null}
+      {isActive ? (
+        <div style={{ width: '100%', marginBottom: '16px' }}>
+          <DesignShowcaseMarquee onSelectDesign={handleDesignSelect} />
+        </div>
+      ) : null}
       <HomeHero
         workspaceContext={workspaceContext}
         ref={inputRef}

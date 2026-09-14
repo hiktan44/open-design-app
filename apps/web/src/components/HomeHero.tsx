@@ -4198,6 +4198,17 @@ function englishSentenceEnd(value: string): string {
 }
 
 function pluginPresetArtifactLabel(chipId: string, kind: PromptLocaleKind): string {
+  if (kind === 'tr') {
+    switch (chipId) {
+      case 'prototype': return 'etkileşimli bir prototip';
+      case 'deck': return 'bir sunum slaytı';
+      case 'image': return 'bir görsel';
+      case 'video': return 'bir video';
+      case 'hyperframes': return 'bir hareketli video animasyonu';
+      case 'audio': return 'bir ses kaydı';
+      default: return 'bir tasarım çıktısı';
+    }
+  }
   if (kind === 'zh') {
     switch (chipId) {
       case 'prototype': return '一个交互原型';
@@ -4244,6 +4255,9 @@ function fallbackPluginPresetPrompt(
   const artifact = pluginPresetArtifactLabel(chipId, kind);
   const title = localizePluginTitle(locale, record);
   const description = localizePluginDescription(locale, record).trim();
+  if (kind === 'tr') {
+    return `"${title}" ön ayarı ile ${artifact} oluştur${description ? `: ${description}` : '.'}`;
+  }
   if (kind === 'zh') {
     return `使用「${title}」插件生成${artifact}${description ? `，方向是：${description}` : ''}。`;
   }
