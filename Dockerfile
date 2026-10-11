@@ -21,7 +21,9 @@ RUN pnpm --filter @open-design/plugin-runtime build
 RUN pnpm --filter @open-design/agui-adapter build
 RUN pnpm --filter @open-design/daemon build
 RUN OD_WEB_OUTPUT_MODE= pnpm --filter @open-design/web build
-RUN pnpm rebuild better-sqlite3
+# Bağlayıcı workspace kökünün değil daemon paketinin bağımlılığıdır.
+RUN pnpm --filter @open-design/daemon rebuild better-sqlite3
+RUN node --experimental-strip-types scripts/check-native-sqlite.ts
 
 FROM node:24-alpine AS runner
 WORKDIR /app
@@ -50,9 +52,14 @@ ENV OD_ALLOW_REMOTE_DAEMON=1
 
 EXPOSE 7456
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD node -e 'fetch("http://127.0.0.1:" + (process.env.OD_PORT || "7456") + "/api/health", {signal: AbortSignal.timeout(4000)}).then(async response => { if (!response.ok || (await response.json()).ok !== true) process.exit(1); }).catch(() => process.exit(1))'
+
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "apps/daemon/dist/cli.js", "--no-open", "--host", "0.0.0.0"]
 
 # --- Agentic Security Firewall: Katman 2 (non-root hardening) ---
 RUN [ -d /app ] && chown -R node:node /app || true
 USER node
+# Son imajdaki dosyaları, kullanıcı izinlerini ve gerçek Node ABI'sini doğrula.
+RUN node --experimental-strip-types scripts/check-native-sqlite.ts
