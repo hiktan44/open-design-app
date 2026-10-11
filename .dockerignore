@@ -7,7 +7,13 @@
 .od
 .ocd
 node_modules
+**/node_modules
+**/.next
 dist
+apps/*/dist
+packages/*/dist
+tools/*/dist
+shells/*/dist
 coverage
 *.log
 tsconfig.tsbuildinfo
